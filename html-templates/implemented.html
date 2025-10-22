@@ -1,0 +1,35 @@
+<html>
+  <head>
+  </head>
+  <body>
+    <div
+      data-stylex-id="container"
+      stylex='{
+        "transition": "height 1s",
+        "place-items": "center",
+        "display": "grid",
+        "width": "200px", 
+        "height": ["200px", 
+          ["@test=large", "400px"]
+        ],
+        "background-color": ["green", 
+            ["@hover", "red"]
+        ],
+        "font-size": "currentColor"
+    }'
+    >
+      <button
+        stylex='{
+          "transition": "font-size 0.5s",
+          "font-size": ["14px", 
+              ["container>@hover", "18px"]
+          ],
+          "outline": [["@media (max-width: 600px)", "2px solid blue"]]
+    }'
+      >
+        Click Me
+      </button>
+    </div>
+    <script src="bundle.js"></script>
+  </body>
+</html>

@@ -1,0 +1,40 @@
+<div data-state-hover="hovered"></div>
+
+styls = { backgroundColor: ['#f0f0f0', ["@hover=errorandhovered", '#f0f0f0']
+["@hover=hovered", '#f0f0f0'] ], }
+
+<div
+  data-state-hover="hovered"
+  :stylex-state-processing="true"
+  stylex='{
+        "rounded": "*md",
+        "shadow": ["*md", 
+            ["@hover=errorandhovered", "*4"],
+            ["@hover=hovered", "*md"]
+        ],
+        "backgroundColor": ["#f0f0f0", 
+            ["button<@hover", "*4"],
+            ["#min-width:300px", "*4"],
+            ["@hover=errorandhovered", "#f0f0f0"],
+            ["@hover=hovered", "#f0f0f0"]
+        ],
+        "fontSize": "currentColor"
+    }'
+>
+  <button
+    :sylex-id="button"
+    stylex='{
+        "rounded": "*md",
+        "shadow": ["*md", 
+            ["@hover=errorandhovered", "*4"],
+            ["@hover=hovered", "*md"]
+        ],
+        "somethingelse": ["#f0f0f0", 
+            ["button<@hover", "*4"],
+        ],
+        "fontSize": "currentColor"
+    }'
+  >
+    Click Me
+  </button>
+</div>

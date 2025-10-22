@@ -1,0 +1,25 @@
+{
+  "name": "@stylex/web",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Edgars Snepsts",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "cdn/**/*"
+  ],
+  "dependencies": {
+    "@stylex/shared": "^0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:ts": "npm run clean && tsc",
+    "build": "npm run clean && tsc"
+  }
+}
