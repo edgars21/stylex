@@ -283,6 +283,7 @@ export function getDynamicTupleSelectorType(
 export enum HierarchySelectorType {
   Parent,
   Child,
+  Sibling,
 }
 type HierarchySelector = [HierarchySelectorType, string];
 function ensureHierarchySafeSelector<
@@ -290,6 +291,7 @@ function ensureHierarchySafeSelector<
 >(value: T): [T, undefined] | [T, HierarchySelector] {
   const regexValidatorHasParentSelector = /^([a-z]+>).*$/;
   const regexValidatorHasChildSelector = /^(>[a-z]+).*$/;
+  const regexValidatorHasSiblingSelector = /^(~[a-z]+).*$/;
 
 
   const matchParentSelector = value.match(regexValidatorHasParentSelector);
@@ -307,6 +309,15 @@ function ensureHierarchySafeSelector<
     return [
       value,
       [HierarchySelectorType.Child, matchChildSelector[1].slice(1)],
+    ];
+  }
+
+  const matchSiblingSelector = value.match(regexValidatorHasSiblingSelector);
+  if (matchSiblingSelector && matchSiblingSelector[1]) {
+    value = value.replace(matchSiblingSelector[1], "") as T;
+    return [
+      value,
+      [HierarchySelectorType.Sibling, matchSiblingSelector[1].slice(1)],
     ];
   }
 

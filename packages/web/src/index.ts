@@ -114,6 +114,11 @@ export function isSelectorMatches(
           `[data-stylex-id="${selectorHierarchy[1]}"]`
         ) as HTMLElement | undefined;
         break;
+      case HierarchySelectorType.Sibling:
+        hierarchyElement = element.parentElement?.querySelector(
+          `[data-stylex-id="${selectorHierarchy[1]}"]`
+        ) as HTMLElement | undefined;
+        break;
     }
     if (hierarchyElement) {
       element = hierarchyElement;
