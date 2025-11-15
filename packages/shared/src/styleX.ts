@@ -22,8 +22,6 @@ type CssPropertyValue = string;
 
 export type StyleXPropertyCamelCase =  CssPropertyNameCamelCase | keyof TransformValues;
 
-const test : StyleXPropertyCamelCase = "transform";
-
 type TransformValues = {
   transformRotate: string;
   transformRotateX: string;

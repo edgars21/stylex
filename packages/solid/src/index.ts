@@ -21,6 +21,10 @@ import {
 } from "@stylex/web";
 import "solid-js";
 
+export type {
+  StyleXProperty,
+}
+
 declare module "solid-js" {
   namespace JSX {
     interface Directives {
@@ -31,6 +35,12 @@ declare module "solid-js" {
 
 export type StyleXValidSolidType = {
   [key in StyleXPropertyCamelCase]?:
+    | string
+    | ([string, string] | [boolean, string] | string)[];
+};
+
+export type StyleXValidType = {
+  [key in StyleXProperty]?:
     | string
     | ([string, string] | [boolean, string] | string)[];
 };
