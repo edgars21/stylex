@@ -2,8 +2,15 @@ import type * as CSS from "csstype";
 import { uniq, kebabCase } from "lodash-es";
 
 export type StyleSet = {
-  [K in CssPropertyName]?: string;
+  [K in CssPropertyName]?: [string, StyleSetSettings?];
 };
+
+interface StyleSetSettings {
+  transition: number;
+  function?: string;
+  onStart?: () => void;
+  onEnd?: () => void;
+}
 
 export type CssPropertyNameCamelCase = keyof CSS.Properties<
   string | number,
@@ -20,7 +27,9 @@ type CssPropertyNameWithCamelCase = keyof CSS.Properties<
 >;
 type CssPropertyValue = string;
 
-export type StyleXPropertyCamelCase =  CssPropertyNameCamelCase | keyof TransformValues;
+export type StyleXPropertyCamelCase =
+  | CssPropertyNameCamelCase
+  | keyof TransformValues;
 
 type TransformValues = {
   transformRotate: string;
@@ -174,7 +183,7 @@ export function splitValueDynamic(
 
 export type ValueDynamicTuple = [ValueDynamicTupleSelector, CssPropertyValue];
 function isValueDynamicTuple(value: any): value is ValueDynamicTuple {
-  if (Array.isArray(value) && value.length === 2) {
+  if (Array.isArray(value) && value.length >= 2) {
     if (isValueDynamicTupleSelector(value[0]) && isValueString(value[1])) {
       return true;
     }
@@ -250,7 +259,6 @@ export function getDynamicTupleSelectorType(
       ValueDynamicTupleSelectorAttribute,
       HierarchySelector?
     ] {
-
   const result = ensureHierarchySafeSelector(value);
   value = result[0];
   const hierarchySelector = result[1];
@@ -290,7 +298,6 @@ function ensureHierarchySafeSelector<
   const regexValidatorHasParentSelector = /^([a-z]+>).*$/;
   const regexValidatorHasChildSelector = /^(>[a-z]+).*$/;
   const regexValidatorHasSiblingSelector = /^(~[a-z]+).*$/;
-
 
   const matchParentSelector = value.match(regexValidatorHasParentSelector);
   if (matchParentSelector && matchParentSelector[1]) {

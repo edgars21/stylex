@@ -189,7 +189,6 @@ function generateSingleDeclarationCssRuleset([name, value], id, el) {
             }
             break;
           case regexValidatorStyleValueTupleDynamicPart.test(valuee[0]):
-            console.log("case matched: ", valuee[0])
             {
               const [stateName, stateValue] = splitStyleValueTupleDynamicPart(valuee[0])
               rulesets.push([
@@ -207,7 +206,6 @@ function generateSingleDeclarationCssRuleset([name, value], id, el) {
 
 function splitStyleValueTupleDynamicPart(value) {
   value = value.slice(1);
-  console.log("Splitting dynamic part:", value);
   const [stateName, stateValue] = value.split("=");
 
   if (!stateName || !stateValue) {
@@ -216,6 +214,3 @@ function splitStyleValueTupleDynamicPart(value) {
 
   return [stateName, stateValue];
 }
-
-console.log("Out:");
-console.log(decode($.html()));

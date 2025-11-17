@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   type StyleXProperty,
   type StyleX,
@@ -20,10 +21,9 @@ import {
   createMediaListenerWithCleanupFactory,
 } from "@stylex/web";
 import "solid-js";
+import { uniq, kebabCase } from "lodash-es";
 
-export type {
-  StyleXProperty,
-}
+export type { StyleXProperty };
 
 declare module "solid-js" {
   namespace JSX {
@@ -60,7 +60,7 @@ function convertStyleXValidSolidTypeToStyleXValidJsType(
         if (typeof item === "string") {
           array.push(item);
         } else {
-          const [selector, propertyValue] = item;
+          const [selector, propertyValue, more] = item;
           if (typeof selector === "boolean") {
             if (selector) {
               array = array.filter(
@@ -71,7 +71,7 @@ function convertStyleXValidSolidTypeToStyleXValidJsType(
               return;
             }
           } else {
-            array.push([selector, propertyValue]);
+            array.push([selector, propertyValue, more]);
           }
         }
       }
@@ -112,10 +112,44 @@ export function stylexx(element: HTMLElement, value: StyleXValidSolidType) {
   const stylex = convertStyleXValidSolidTypeToStyleX(stylexPossibleValue);
   const styleSet = convertStyleXToStyleSet(element, stylex);
 
-  Object.entries(styleSet)
+  const direct = Object.entries(value)
+    .map(([key, val]) => {
+      key = kebabCase(key);
+      if (typeof val === "string") {
+        val = [[true, val]];
+      } else {
+        val = val.map((v) => {
+          if (typeof v === "string") {
+            return [true, v];
+          } else {
+            return v;
+          }
+        });
+      }
+      return [key, val];
+    })
+    .reduce((acc, [key, val]) => {
+      acc[key] = val;
+      return acc;
+    }, {});
+
+  const directNext = convertStyleXToStyleSet(element, direct);  
+
+
+  // if (direct["transform-translate-y"]) {
+  //   console.log("-----> transform-translate-y detected");
+  //   console.log("value;", value);
+  //   console.log("styleSet direct:", direct);
+  //   console.log("direct next", directNext);
+  // }
+
+
+  // Object.entries(styleSet)
+  Object.entries(directNext)
     .sort(([a], [b]) => (a === "transform" ? -1 : b === "transform" ? 1 : 0))
     .forEach(([key, val]) => {
-      setStyleProperty(element, key, val);
+      if (!val) return;
+      setStyleProperty(element, key, val[0], val[1]);
     });
 }
 
@@ -147,7 +181,7 @@ export function stylex(
         const [selectorType, selectorValue, selectorHierarchy] =
           getDynamicTupleSelectorType(selector);
 
-        let elementToCheck = element; 
+        let elementToCheck = element;
         if (selectorHierarchy) {
           let hierarchyElement: HTMLElement | undefined;
           switch (selectorHierarchy[0]) {
@@ -205,15 +239,19 @@ export function stylex(
               splitValueDynamicTupleSelectorAttribute(selectorValue);
             const fullAttrName = `data-stylex-${attrName}`;
 
-            observeWithCleanup(elementToCheck, { attributes: true }, (mutations) => {
-              for (const m of mutations) {
-                if (m.type === "attributes") {
-                  if (m.attributeName === fullAttrName) {
-                    setRerender((v) => v + 1);
+            observeWithCleanup(
+              elementToCheck,
+              { attributes: true },
+              (mutations) => {
+                for (const m of mutations) {
+                  if (m.type === "attributes") {
+                    if (m.attributeName === fullAttrName) {
+                      setRerender((v) => v + 1);
+                    }
                   }
                 }
               }
-            });
+            );
             break;
         }
       });

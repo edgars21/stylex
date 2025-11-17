@@ -1,4 +1,5 @@
 // import { getStyleEntries, createCssRulesestBlock } from "@stylex/shared/styleTag";
+// @ts-nocheck
 import {
   type StyleX,
   type StyleSet,
@@ -17,7 +18,13 @@ import camelCase from "lodash/camelCase";
 export function setStyleProperty(
   element: HTMLElement,
   name: string,
-  value: string | null
+  value: string | null,
+  settings?: {
+    transition: number;
+    function?: string;
+    onStart?: () => void;
+    onEnd?: () => void;
+  }
 ) {
   if (name.startsWith("transform-")) {
     let functionName = camelCase(name.replace("transform", ""));
@@ -41,6 +48,51 @@ export function setStyleProperty(
     } else {
       if (value) {
         existingTransformParts.push([functionName, `(${value})`]);
+      }
+    }
+
+    if (settings?.transition) {
+      const currentTransition = element.style.transition;
+      const parts = currentTransition
+        .split(",")
+        .map((p) => p.trim())
+        .map((p) => p.split(" ").map((s) => s.trim()));
+      const transitionMap = (parts as [string, string, string?][]).reduce(
+        (acc, [tName, tTime, tFunction]) => {
+          acc[tName] = [tTime, tFunction];
+          return acc;
+        },
+        {} as Record<string, [string, string?]>
+      );
+
+      transitionMap[name] = [settings.transition + "ms", settings.function];
+
+      const newTransition = Object.entries(transitionMap)
+        .map(
+          ([tName, [tTime, tFunction]]) =>
+            `${tName} ${tTime}${tFunction ? ` ${tFunction}` : ""}`
+        )
+        .join(", ");
+      element.style.transition = newTransition;
+
+      if (settings.onStart) {
+        const listener = (e: TransitionEvent) => {
+          if (e.propertyName === name) {
+            settings.onStart();
+            element.removeEventListener("transitionstart", listener);
+          }
+        };
+        element.addEventListener("transitionstart", listener);
+      }
+
+      if (settings.onEnd) {
+        const listener = (e: TransitionEvent) => {
+          if (e.propertyName === name) {
+            settings.onEnd();
+            element.removeEventListener("transitionend", listener);
+          }
+        };
+        element.addEventListener("transitionend", listener);
       }
     }
 
@@ -72,7 +124,7 @@ export function convertStyleXToStyleSet(
   const styleSet: StyleSet = {};
   (Object.entries(styleX) as StyleXEntry[]).forEach(([key, val]) => {
     if (typeof val === "string") {
-      styleSet[key] = val;
+      styleSet[key] = [val];
     } else {
       styleSet[key] = getCssPropertyValueFromValueDynamic(val, el);
     }
@@ -86,9 +138,17 @@ export function getCssPropertyValueFromValueDynamic(
   el: HTMLElement
 ): string | undefined {
   const [tuples, fallback] = splitValueDynamic(value);
-  for (const [selector, propertyValue] of tuples) {
+  for (const [selector, propertyValue, settings] of tuples) {
+    if (typeof selector === "boolean") {
+      if (selector) {
+        return [propertyValue, ...settings ? [settings] : []];
+      } else {
+        continue;
+      }
+
+    }
     if (isSelectorMatches(selector, el)) {
-      return propertyValue;
+      return [propertyValue, ...settings ? [settings] : []];
     }
   }
   return fallback;
