@@ -1,290 +1,18 @@
 import type * as CSS from "csstype";
-import { uniq, kebabCase } from "lodash-es";
+import { kebabCase } from "lodash-es";
 
 export type StyleSet = {
-  [K in CssPropertyName]?: [string, StyleSetSettings?];
+  [K in keyof CSS.PropertiesHyphen]: [CSS.PropertiesHyphen<K>, Settings?] | null;
 };
 
-interface StyleSetSettings {
-  transition: number;
-  function?: string;
-  onStart?: () => void;
-  onEnd?: () => void;
-}
+type ValueOf<T> = T[keyof T];
 
-export type CssPropertyNameCamelCase = keyof CSS.Properties<
-  string | number,
-  string | number
->;
+export type CssValue = string | number; //ValueOf<CSS.PropertiesHyphen>;
 
-type CssPropertyName = keyof CSS.PropertiesHyphen<
-  string | number,
-  string | number
->;
-type CssPropertyNameWithCamelCase = keyof CSS.Properties<
-  string | number,
-  string | number
->;
-type CssPropertyValue = string;
-
-export type StyleXPropertyCamelCase =
-  | CssPropertyNameCamelCase
-  | keyof TransformValues;
-
-type TransformValues = {
-  transformRotate: string;
-  transformRotateX: string;
-  transformRotateY: string;
-  transformRotateZ: string;
-  transformRotate3d: string;
-  transformTranslate: string;
-  transformTranslateX: string;
-  transformTranslateY: string;
-  transformTranslateZ: string;
-  transformTranslate3d: string;
-  transformScale: string;
-  transformScaleX: string;
-  transformScaleY: string;
-  transformScaleZ: string;
-  transformScale3d: string;
-};
-
-type TransformValuesKebab = {
-  "transform-rotate": string;
-  "transform-rotateX": string;
-  "transform-rotateY": string;
-  "transform-rotateZ": string;
-  "transform-rotate3d": string;
-  "transform-translate": string;
-  "transform-translateX": string;
-  "transform-translateY": string;
-  "transform-translateZ": string;
-  "transform-translate3d": string;
-  "transform-scale": string;
-  "transform-scaleX": string;
-  "transform-scaleY": string;
-  "transform-scaleZ": string;
-  "transform-scale3d": string;
-};
-
+export type StyleXTuple = [keyof StyleX, ValueOf<StyleX>];
 export type StyleX = {
-  [K in StyleXProperty]?: StyleXValue;
+  [CssKey in keyof CSS.PropertiesHyphen]: Value<CSS.PropertiesHyphen[CssKey]>[];
 };
-export function isStyleX(value: Object): value is StyleX {
-  if (
-    Object.entries(value).every(([sxProperty, sxValue]) =>
-      isStyleXEntry([sxProperty, sxValue])
-    )
-  ) {
-    return true;
-  }
-  return false;
-}
-
-export function assertStyleX(value: Object): asserts value is StyleX {
-  if (!isStyleX(value)) {
-    throw new Error("Invalid StyleX object");
-  }
-}
-
-export type StyleXEntry = [StyleXProperty, StyleXValue];
-function isStyleXEntry(value: [any, any]): value is StyleXEntry {
-  if (isStyleXProperty(value[0]) || isStyleXValue(value[1])) {
-    return true;
-  }
-  return false;
-}
-export function assertStyleXEntry(value: [any, any]) {
-  if (!isStyleXEntry(value)) {
-    throw new Error(`Invalid StyleXEntry tuple: ${JSON.stringify(value)}`);
-  }
-}
-
-export type StyleXProperty = CssPropertyName;
-export function isStyleXProperty(value: any): value is StyleXProperty {
-  if (typeof value === "string") {
-    return true;
-  }
-  return false;
-}
-export function assertStyleXProperty(value: any) {
-  if (!isStyleXProperty(value)) {
-    throw new Error(`Invalid StyleXProperty value: ${JSON.stringify(value)}`);
-  }
-}
-
-export type StyleXValue = CssPropertyValue | ValueDynamic;
-export function isStyleXValue(value: any): value is StyleXValue {
-  if (isValueString(value) || isValueDynamic(value)) {
-    return true;
-  }
-  throw new Error("isStyleXValue: nothing matched");
-  return false;
-}
-export function assertStyleXValue(value: any) {
-  if (!isStyleXValue(value)) {
-    throw new Error(`Invalid StyleXValue value: ${JSON.stringify(value)}`);
-  }
-}
-
-export function isValueString(value: any): value is string {
-  return typeof value === "string";
-}
-export function assertisValueString(value: any) {
-  if (!isValueString(value)) {
-    throw new Error(`Invalid ValueString value: ${JSON.stringify(value)}`);
-  }
-}
-
-declare const BrandValueDynamic: unique symbol;
-export type ValueDynamic = (string | ValueDynamicTuple)[] & {
-  readonly [BrandValueDynamic]: true;
-};
-
-function isValueDynamic(value: any): value is ValueDynamic {
-  value = uniq(value);
-  if (Array.isArray(value) && value.length > 0) {
-    const last = value.slice(-1)[0];
-    const rest = value.slice(0, -1);
-
-    if (rest.length) {
-      const allValid = rest.every((v) => isValueDynamicTuple(v));
-      if (!allValid) {
-        return false;
-      }
-    }
-
-    if (isValueString(last)) {
-      return true;
-    } else if (isValueDynamicTuple(last)) {
-      return true;
-    }
-  }
-  return false;
-}
-export function assertValueDynamic(value: any) {
-  if (!isValueDynamic(value)) {
-    throw new Error(`Invalid ValueDynamic value: ${JSON.stringify(value)}`);
-  }
-}
-export function splitValueDynamic(
-  value: ValueDynamic
-): [ValueDynamicTuple[], string | undefined] {
-  let defaultValue: string | undefined = undefined;
-  let last = value.slice(-1)[0];
-  const rest = value.slice(0, -1) as ValueDynamicTuple[];
-  if (isValueString(last)) {
-    defaultValue = last;
-  } else {
-    rest.push(last);
-  }
-  return [rest, defaultValue];
-}
-
-export type ValueDynamicTuple = [ValueDynamicTupleSelector, CssPropertyValue];
-function isValueDynamicTuple(value: any): value is ValueDynamicTuple {
-  if (Array.isArray(value) && value.length >= 2) {
-    if (isValueDynamicTupleSelector(value[0]) && isValueString(value[1])) {
-      return true;
-    }
-  }
-
-  return false;
-}
-export function assertValueDynamicTuple(
-  value: any
-): asserts value is ValueDynamicTuple {
-  if (!isValueDynamicTuple(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTuple value: ${JSON.stringify(value)}`
-    );
-  }
-}
-
-export type ValueDynamicTupleSelector =
-  | ValueDynamicTupleSelectorMedia
-  | ValueDynamicTupleSelectorPseudoHover
-  | ValueDynamicTupleSelectorAttribute;
-export function isValueDynamicTupleSelector(
-  value: string
-): value is ValueDynamicTupleSelector {
-  [value] = ensureHierarchySafeSelector(value);
-
-  if (isValueDynamicTupleSelectorMedia(value)) {
-    return true;
-  }
-
-  if (isValueDynamicTupleSelectorPseudoHover(value)) {
-    return true;
-  }
-
-  if (isValueDynamicTupleSelectorAttribute(value)) {
-    return true;
-  }
-
-  return false;
-}
-export function assertValueDynamicTupleSelector(
-  value: any
-): asserts value is ValueDynamicTupleSelector {
-  if (!isValueDynamicTupleSelector(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTupleSelector value: ${JSON.stringify(value)}`
-    );
-  }
-}
-
-export enum ValueDynamicTupleSelectorType {
-  Media,
-  PseudoHover,
-  PseudoActive,
-  Attribute,
-}
-export function getDynamicTupleSelectorType(
-  value: ValueDynamicTupleSelector
-):
-  | [ValueDynamicTupleSelectorType.Media, ValueDynamicTupleSelectorMedia]
-  | [
-      ValueDynamicTupleSelectorType.PseudoHover,
-      ValueDynamicTupleSelectorPseudoHover,
-      HierarchySelector?
-    ]
-  | [
-      ValueDynamicTupleSelectorType.PseudoActive,
-      ValueDynamicTupleSelectorPseudoActive,
-      HierarchySelector?
-    ]
-  | [
-      ValueDynamicTupleSelectorType.Attribute,
-      ValueDynamicTupleSelectorAttribute,
-      HierarchySelector?
-    ] {
-  const result = ensureHierarchySafeSelector(value);
-  value = result[0];
-  const hierarchySelector = result[1];
-  if (isValueDynamicTupleSelectorPseudoHover(value)) {
-    return [
-      ValueDynamicTupleSelectorType.PseudoHover,
-      value,
-      hierarchySelector,
-    ];
-  }
-  if (isValueDynamicTupleSelectorPseudoActive(value)) {
-    return [
-      ValueDynamicTupleSelectorType.PseudoActive,
-      value,
-      hierarchySelector,
-    ];
-  }
-  if (isValueDynamicTupleSelectorMedia(value)) {
-    return [ValueDynamicTupleSelectorType.Media, value];
-  }
-  if (isValueDynamicTupleSelectorAttribute(value)) {
-    return [ValueDynamicTupleSelectorType.Attribute, value, hierarchySelector];
-  }
-
-  throw new Error("nothing");
-}
 
 export enum HierarchySelectorType {
   Parent,
@@ -292,195 +20,223 @@ export enum HierarchySelectorType {
   Sibling,
 }
 type HierarchySelector = [HierarchySelectorType, string];
-function ensureHierarchySafeSelector<
-  T extends ValueDynamicTupleSelector | string
->(value: T): [T, undefined] | [T, HierarchySelector] {
-  const regexValidatorHasParentSelector = /^([a-z]+>).*$/;
-  const regexValidatorHasChildSelector = /^(>[a-z]+).*$/;
-  const regexValidatorHasSiblingSelector = /^(~[a-z]+).*$/;
 
-  const matchParentSelector = value.match(regexValidatorHasParentSelector);
-  if (matchParentSelector && matchParentSelector[1]) {
-    value = value.replace(matchParentSelector[1], "") as T;
-    return [
-      value,
-      [HierarchySelectorType.Parent, matchParentSelector[1].slice(0, -1)],
-    ];
-  }
+export type StyleXJsTuple = [keyof StyleXJs, ValueOf<StyleXJs>];
+export type StyleXJs = {
+  [CssKey in keyof CSS.Properties]: WithSettingsValueStyleXJs<
+    CSS.Properties[CssKey]
+  >;
+};
 
-  const matchChildSelector = value.match(regexValidatorHasChildSelector);
-  if (matchChildSelector && matchChildSelector[1]) {
-    value = value.replace(matchChildSelector[1], "") as T;
-    return [
-      value,
-      [HierarchySelectorType.Child, matchChildSelector[1].slice(1)],
-    ];
-  }
+type WithSettingsValueStyleXJs<CV extends CssValue = CssValue> =
+  | ValueStyleXJs<CV>
+  | SettingValueStyleXJs<CV>;
 
-  const matchSiblingSelector = value.match(regexValidatorHasSiblingSelector);
-  if (matchSiblingSelector && matchSiblingSelector[1]) {
-    value = value.replace(matchSiblingSelector[1], "") as T;
-    return [
-      value,
-      [HierarchySelectorType.Sibling, matchSiblingSelector[1].slice(1)],
-    ];
-  }
+type SettingValueStyleXJs<CV extends CssValue = CssValue> = [
+  ValueStyleXJs<CV>,
+  Settings?
+];
 
-  return [value, undefined];
+type ValueStyleXJs<CV extends CssValue = CssValue> = ((
+  | Value<CV>
+  | string
+  | number
+)[]) | CV;
+
+export type Value<CV extends CssValue = CssValue> = [Selector, CV, Settings?];
+
+export function styleXFromStyleXJs(styleXJs: StyleXJs): StyleX {
+  const out = (Object.entries(styleXJs) as unknown as StyleXJsTuple[]).reduce<StyleX>(
+    (acc, [key, value]) => {
+      let globlSettings: Settings | undefined = undefined;
+      // @ts-ignore
+      if (!Array.isArray(value)) {
+        value = [value];
+      } else if (isSettingsValueStylexJs(value)) {
+        globlSettings = value[1];
+        value = value[0];
+      }
+
+      value = value
+        // @ts-ignore
+        .map((v) => {
+          if (!Array.isArray(v)) {
+            v = [true, v];
+          }
+          return v;
+        })
+        .map((v) => {
+          if (globlSettings && !v[2]) {
+            v[2] = globlSettings;
+          }
+          return v;
+        });
+
+      acc[kebabCase(key)] = value;
+
+      return acc;
+    },
+    {}
+  );
+
+  return out;
 }
 
-type ValueDynamicTupleSelectorMedia = string & {
-  readonly __brand: "ValueDynamicTupleSelectorMedia";
+export function isSettingsValueStylexJs(
+  value: WithSettingsValueStyleXJs
+): value is SettingValueStyleXJs {
+  return Array.isArray(value) && value.length === 2 && !Array.isArray(value[1]) && typeof value[1] === "object";
+}
+
+export type Settings = {
+  transition: number;
+  function?: string;
+  onStart?: () => void;
+  onEnd?: () => void;
 };
-function isValueDynamicTupleSelectorMedia(
-  value: string
-): value is ValueDynamicTupleSelectorMedia {
-  if (value.startsWith("@media")) {
+
+export type Selector = (string | Boolean) & {
+  readonly __brand: unique symbol;
+};
+
+export enum SelectorType {
+  Boolean,
+  Media,
+  Pseudo,
+  Attribute,
+}
+
+export function parseSelector(
+  selectorValue: Selector
+): [Selector, SelectorType, HierarchySelector?] {
+  const [selector, hierarchy] = ensureHierarchySafeSelector(selectorValue);
+  return [selector, getSelectorType(selector), hierarchy];
+}
+
+function getSelectorType(value: Selector): SelectorType {
+  if (isSelectorTypeBoolean(value)) {
+    return SelectorType.Boolean;
+  } else if (isSelectorTypeMedia(value)) {
+    return SelectorType.Media;
+  } else if (isSelectorTypePseudo(value)) {
+    return SelectorType.Pseudo;
+  } else if (isSelectorTypeAttribute(value)) {
+    return SelectorType.Attribute;
+  }
+}
+
+function isSelectorTypeBoolean(selector: Selector) {
+  [selector] = ensureHierarchySafeSelector(selector);
+  return typeof selector === "boolean";
+}
+
+function isSelectorTypeMedia(selector: Selector) {
+  [selector] = ensureHierarchySafeSelector(selector);
+  if (typeof selector === "string" && selector.startsWith("@media")) {
     return true;
   }
   return false;
 }
-export function assertValueDynamicTupleSelectorMedia(
-  value: string
-): asserts value is ValueDynamicTupleSelectorMedia {
-  if (!isValueDynamicTupleSelectorMedia(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTupleSelectorMedia value: ${JSON.stringify(value)}`
-    );
+
+function isSelectorTypePseudo(selector: Selector) {
+  [selector] = ensureHierarchySafeSelector(selector);
+  if (typeof selector === "string" && selector.startsWith(":")) {
+    return true;
   }
+  return false;
 }
 
-type ValueDynamicTupleSelectorPseudoHover = string & {
-  readonly __brand: "ValueDynamicTupleSelectorPseudoHover";
-};
-export function isValueDynamicTupleSelectorPseudoHover(
-  value: string
-): value is ValueDynamicTupleSelectorPseudoHover {
-  [value] = ensureHierarchySafeSelector(value);
-  return value === "@hover";
-}
-export function assertValueDynamicTupleSelectorPseudoHover(
-  value: string
-): asserts value is ValueDynamicTupleSelectorPseudoHover {
-  if (!isValueDynamicTupleSelectorPseudoHover(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTupleSelectorPseudoHover value: ${JSON.stringify(
-        value
-      )}`
-    );
-  }
-}
-
-type ValueDynamicTupleSelectorPseudoActive = string & {
-  readonly __brand: "ValueDynamicTupleSelectorPseudoActive";
-};
-export function isValueDynamicTupleSelectorPseudoActive(
-  value: string
-): value is ValueDynamicTupleSelectorPseudoActive {
-  [value] = ensureHierarchySafeSelector(value);
-  return value === "@active";
-}
-export function assertValueDynamicTupleSelectorPseudoActive(
-  value: string
-): asserts value is ValueDynamicTupleSelectorPseudoActive {
-  if (!isValueDynamicTupleSelectorPseudoActive(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTupleSelectorPseudoActive value: ${JSON.stringify(
-        value
-      )}`
-    );
-  }
-}
-
-export type ValueDynamicTupleSelectorAttribute = string & {
-  readonly __brand: "ValueDynamicTupleSelectorAttribute";
-};
-function isValueDynamicTupleSelectorAttribute(
-  value: string
-): value is ValueDynamicTupleSelectorAttribute {
-  [value] = ensureHierarchySafeSelector(value);
+function isSelectorTypeAttribute(selector: Selector) {
+  [selector] = ensureHierarchySafeSelector(selector);
   if (
-    value.startsWith("@") &&
-    !isValueDynamicTupleSelectorMedia(value) &&
-    !isValueDynamicTupleSelectorMedia(value)
+    typeof selector === "string" &&
+    selector.startsWith("@") &&
+    !isSelectorTypeMedia(selector)
   ) {
     return true;
   }
   return false;
 }
-export function assertValueDynamicTupleSelectorAttribute(
-  value: string
-): asserts value is ValueDynamicTupleSelectorAttribute {
-  if (!isValueDynamicTupleSelectorAttribute(value)) {
-    throw new Error(
-      `Invalid ValueDynamicTupleSelectorAttribute value: ${JSON.stringify(
-        value
-      )}`
-    );
+
+function ensureHierarchySafeSelector(
+  selector: Selector
+): [Selector, HierarchySelector?] {
+  if (typeof selector === "boolean") return [selector];
+
+  let onlyString = selector as string;
+  const regexValidatorHasParentSelector = /^([a-z]+>).*$/;
+  const regexValidatorHasChildSelector = /^(>[a-z]+).*$/;
+  const regexValidatorHasSiblingSelector = /^(~[a-z]+).*$/;
+
+  const matchParentSelector = onlyString.match(regexValidatorHasParentSelector);
+  if (matchParentSelector && matchParentSelector[1]) {
+    onlyString = onlyString.replace(matchParentSelector[1], "");
+    return [
+      onlyString as Selector,
+      [HierarchySelectorType.Parent, matchParentSelector[1].slice(0, -1)],
+    ];
   }
-}
-export function splitValueDynamicTupleSelectorAttribute(
-  value: ValueDynamicTupleSelectorAttribute
-): [string, string?, HierarchySelector?] {
-  const result = ensureHierarchySafeSelector(value);
-  const hierarchySelector = result[1];
 
+  const matchChildSelector = onlyString.match(regexValidatorHasChildSelector);
+  if (matchChildSelector && matchChildSelector[1]) {
+    onlyString = onlyString.replace(matchChildSelector[1], "");
+    return [
+      onlyString as Selector,
+      [HierarchySelectorType.Child, matchChildSelector[1].slice(1)],
+    ];
+  }
+
+  const matchSiblingSelector = onlyString.match(
+    regexValidatorHasSiblingSelector
+  );
+  if (matchSiblingSelector && matchSiblingSelector[1]) {
+    onlyString = onlyString.replace(matchSiblingSelector[1], "");
+    return [
+      onlyString as Selector,
+      [HierarchySelectorType.Sibling, matchSiblingSelector[1].slice(1)],
+    ];
+  }
+
+  return [selector];
+}
+
+export function splitSelectorTypeAttribute(value: string): [string, string?] {
   const [attrName, attrValue] = value.slice(1).split("=");
-
-  return [attrName, attrValue, hierarchySelector];
+  return [attrName, attrValue as string | undefined];
 }
 
-export type StyleXValidJsType = {
-  [K in StyleXPropertyCamelCase]?: string | ([string, string] | string)[];
-};
-export function convertStyleXValidSolidTypeToStyleX(
-  value: StyleXValidJsType
-): StyleX {
-  const result: {
-    string?: string | ([string, string] | string)[];
-  } = {};
+// type TransformValues = {
+//   transformRotate: string;
+//   transformRotateX: string;
+//   transformRotateY: string;
+//   transformRotateZ: string;
+//   transformRotate3d: string;
+//   transformTranslate: string;
+//   transformTranslateX: string;
+//   transformTranslateY: string;
+//   transformTranslateZ: string;
+//   transformTranslate3d: string;
+//   transformScale: string;
+//   transformScaleX: string;
+//   transformScaleY: string;
+//   transformScaleZ: string;
+//   transformScale3d: string;
+// };
 
-  Object.entries(value).forEach(([key, val]) => {
-    if (!key.startsWith("--")) {
-      key = kebabCase(key);
-    }
-    if (typeof val === "string") {
-      result[key] = val;
-    } else {
-      val;
-      if (val.length === 0) {
-        return;
-      } else if (val.length === 1 && typeof val[0] === "string") {
-        result[key] = val[0];
-      } else {
-        let first = val[0];
-        let last = val[val.length - 1];
-        let rest = val.slice(1, -1);
-
-        rest = rest.filter((v) => isValueDynamicTuple(v));
-
-        if (last && isValueDynamicTuple(last)) {
-          rest.push(last);
-          last = undefined;
-        } else if (last && typeof last !== "string") {
-          last = undefined;
-        }
-
-        if (isValueDynamicTuple(first)) {
-          rest.unshift(first);
-        } else if (typeof first === "string") {
-          last = first;
-        }
-
-        if (last) {
-          rest.push(last);
-        }
-
-        result[key] = rest;
-      }
-    }
-  });
-
-  assertStyleX(result);
-  return result;
-}
+// type TransformValuesKebab = {
+//   "transform-rotate": string;
+//   "transform-rotateX": string;
+//   "transform-rotateY": string;
+//   "transform-rotateZ": string;
+//   "transform-rotate3d": string;
+//   "transform-translate": string;
+//   "transform-translateX": string;
+//   "transform-translateY": string;
+//   "transform-translateZ": string;
+//   "transform-translate3d": string;
+//   "transform-scale": string;
+//   "transform-scaleX": string;
+//   "transform-scaleY": string;
+//   "transform-scaleZ": string;
+//   "transform-scale3d": string;
+// };

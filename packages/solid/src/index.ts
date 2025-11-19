@@ -1,16 +1,12 @@
-// @ts-nocheck
 import {
-  type StyleXProperty,
-  type StyleX,
-  ValueDynamic,
-  type StyleXValidJsType,
-  convertStyleXValidSolidTypeToStyleX,
-  type ValueDynamicTupleSelector,
-  getDynamicTupleSelectorType,
-  ValueDynamicTupleSelectorType,
-  splitValueDynamicTupleSelectorAttribute,
+  parseSelector,
+  splitSelectorTypeAttribute,
+  type StyleXJs,
+  styleXFromStyleXJs,
+  type Selector,
+  isSettingsValueStylexJs,
   HierarchySelectorType,
-  type StyleXPropertyCamelCase,
+  SelectorType,
 } from "@stylex/shared/styleX";
 import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 import {
@@ -23,140 +19,51 @@ import {
 import "solid-js";
 import { uniq, kebabCase } from "lodash-es";
 
-export type { StyleXProperty };
+export type { StyleXJs };
 
 declare module "solid-js" {
   namespace JSX {
     interface Directives {
-      stylex: StyleXValidSolidType;
+      stylex: StyleXJs;
     }
   }
 }
 
-export type StyleXValidSolidType = {
-  [key in StyleXPropertyCamelCase]?:
-    | string
-    | ([string, string] | [boolean, string] | string)[];
-};
-
-export type StyleXValidType = {
-  [key in StyleXProperty]?:
-    | string
-    | ([string, string] | [boolean, string] | string)[];
-};
-
-function convertStyleXValidSolidTypeToStyleXValidJsType(
-  value: StyleXValidSolidType
-): StyleXValidJsType {
-  const result: StyleX = {};
+function readAttributeSelectors(value: StyleXJs): Selector[] {
+  const selectors: Set<Selector> = new Set();
 
   Object.entries(value).forEach(([key, val]) => {
-    if (typeof val === "string") {
-      result[key] = val;
-    } else {
-      let array: ([string, string] | string)[] = [];
-
-      for (const item of val) {
-        if (typeof item === "string") {
-          array.push(item);
-        } else {
-          const [selector, propertyValue, more] = item;
-          if (typeof selector === "boolean") {
-            if (selector) {
-              array = array.filter(
-                (v) => typeof v !== "string"
-              ) as ValueDynamic;
-              array.push(propertyValue);
-              result[key] = array;
-              return;
-            }
-          } else {
-            array.push([selector, propertyValue, more]);
+    if (isSettingsValueStylexJs(val)) {
+      val = val[0];
+    }
+    if (Array.isArray(val)) {
+      // @ts-ignore
+      val.forEach((v) => {
+        if (Array.isArray(v)) {
+          if (typeof v[0] === "string") {
+            selectors.add(v[0]);
           }
         }
-      }
-
-      if (array.length > 0) {
-        result[key] = array;
-      }
+      })
     }
   });
 
-  return result;
+  return Array.from(selectors);
 }
 
-function readAttributeSelectors(
-  value: StyleXValidSolidType
-): ValueDynamicTupleSelector[] {
-  const selectors: ValueDynamicTupleSelector[] = [];
-
-  Object.entries(value).forEach(([key, val]) => {
-    if (typeof val !== "string") {
-      for (const item of val) {
-        if (typeof item !== "string") {
-          const [selector] = item;
-          if (typeof selector === "string") {
-            selectors.push(selector as ValueDynamicTupleSelector);
-          }
-        }
-      }
-    }
-  });
-
-  return selectors;
-}
-
-export function stylexx(element: HTMLElement, value: StyleXValidSolidType) {
-  const stylexPossibleValue =
-    convertStyleXValidSolidTypeToStyleXValidJsType(value);
-  const stylex = convertStyleXValidSolidTypeToStyleX(stylexPossibleValue);
+export function stylexx(element: HTMLElement, value: StyleXJs) {
+  const stylex = styleXFromStyleXJs(value);
   const styleSet = convertStyleXToStyleSet(element, stylex);
-
-  const direct = Object.entries(value)
-    .map(([key, val]) => {
-      key = kebabCase(key);
-      if (typeof val === "string") {
-        val = [[true, val]];
-      } else {
-        val = val.map((v) => {
-          if (typeof v === "string") {
-            return [true, v];
-          } else {
-            return v;
-          }
-        });
-      }
-      return [key, val];
-    })
-    .reduce((acc, [key, val]) => {
-      acc[key] = val;
-      return acc;
-    }, {});
-
-  const directNext = convertStyleXToStyleSet(element, direct);  
-
-
-  // if (direct["transform-translate-y"]) {
-  //   console.log("-----> transform-translate-y detected");
-  //   console.log("value;", value);
-  //   console.log("styleSet direct:", direct);
-  //   console.log("direct next", directNext);
-  // }
-
-
-  // Object.entries(styleSet)
-  Object.entries(directNext)
+  Object.entries(styleSet)
     .sort(([a], [b]) => (a === "transform" ? -1 : b === "transform" ? 1 : 0))
     .forEach(([key, val]) => {
       if (!val) return;
+      // @ts-ignore
       setStyleProperty(element, key, val[0], val[1]);
     });
 }
 
-export function stylex(
-  element: HTMLElement,
-  callback: () => StyleXValidSolidType
-) {
+export function stylex(element: HTMLElement, callback: () => StyleXJs) {
   const [listenWithCleanup, listenerCleanup] =
     createEventListenerWithCleanupFactory();
   const [observeWithCleanup, observerCleanup] =
@@ -178,8 +85,8 @@ export function stylex(
       init = true;
       const selectors = readAttributeSelectors(value);
       selectors.forEach((selector) => {
-        const [selectorType, selectorValue, selectorHierarchy] =
-          getDynamicTupleSelectorType(selector);
+        const [selectorValue, selectorType, selectorHierarchy] =
+          parseSelector(selector);
 
         let elementToCheck = element;
         if (selectorHierarchy) {
@@ -207,36 +114,44 @@ export function stylex(
             return false;
           }
         }
+
+        if (selectorType === SelectorType.Boolean) return;
+        const selectorValueStr = selectorValue as string;
+
         switch (selectorType) {
-          case ValueDynamicTupleSelectorType.Media:
-            listeneMediaWithCleanup(selectorValue.replace("@media", ""), () => {
-              setRerender((v) => v + 1);
-            });
-            break;
-          case ValueDynamicTupleSelectorType.PseudoHover:
-            listenWithCleanup(elementToCheck, "mouseenter", () => {
-              setRerender((v) => v + 1);
-            });
-            listenWithCleanup(elementToCheck, "mouseleave", () => {
-              setRerender((v) => v + 1);
-            });
-            break;
-          case ValueDynamicTupleSelectorType.PseudoActive:
-            let isDown = false;
-            listenWithCleanup(elementToCheck, "pointerdown", () => {
-              isDown = true;
-              setRerender((v) => v + 1);
-            });
-            listenWithCleanup(window, "pointerup", () => {
-              if (isDown) {
-                isDown = false;
+          case SelectorType.Media:
+            listeneMediaWithCleanup(
+              selectorValueStr.replace("@media", ""),
+              () => {
                 setRerender((v) => v + 1);
               }
-            });
+            );
             break;
-          case ValueDynamicTupleSelectorType.Attribute:
+          case SelectorType.Pseudo:
+            if (selectorValueStr === ":hover") {
+              listenWithCleanup(elementToCheck, "mouseenter", () => {
+                setRerender((v) => v + 1);
+              });
+              listenWithCleanup(elementToCheck, "mouseleave", () => {
+                setRerender((v) => v + 1);
+              });
+            } else if (selectorValueStr === ":active") {
+              let isDown = false;
+              listenWithCleanup(elementToCheck, "pointerdown", () => {
+                isDown = true;
+                setRerender((v) => v + 1);
+              });
+              listenWithCleanup(window, "pointerup", () => {
+                if (isDown) {
+                  isDown = false;
+                  setRerender((v) => v + 1);
+                }
+              });
+            }
+            break;
+          case SelectorType.Attribute:
             const [attrName, attrValuey] =
-              splitValueDynamicTupleSelectorAttribute(selectorValue);
+              splitSelectorTypeAttribute(selectorValueStr);
             const fullAttrName = `data-stylex-${attrName}`;
 
             observeWithCleanup(

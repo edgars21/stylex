@@ -1,24 +1,23 @@
 // import { getStyleEntries, createCssRulesestBlock } from "@stylex/shared/styleTag";
-// @ts-nocheck
 import {
   type StyleX,
   type StyleSet,
-  type StyleXEntry,
-  type ValueDynamicTuple,
-  type ValueDynamic,
-  type ValueDynamicTupleSelector,
-  getDynamicTupleSelectorType,
-  ValueDynamicTupleSelectorType,
-  splitValueDynamicTupleSelectorAttribute,
-  splitValueDynamic,
   HierarchySelectorType,
+  type StyleXTuple,
+  type Value,
+  type Selector,
+  parseSelector,
+  SelectorType,
+  splitSelectorTypeAttribute,
+  type CssValue,
+  isSettingsValueStylexJs
 } from "@stylex/shared/styleX";
 import camelCase from "lodash/camelCase";
 
 export function setStyleProperty(
   element: HTMLElement,
   name: string,
-  value: string | null,
+  value: CssValue | null,
   settings?: {
     transition: number;
     function?: string;
@@ -101,7 +100,7 @@ export function setStyleProperty(
   }
 
   value != null
-    ? element.style.setProperty(name, value)
+    ? element.style.setProperty(name, String(value))
     : element.style.removeProperty(name);
 }
 
@@ -122,44 +121,51 @@ export function convertStyleXToStyleSet(
   styleX: StyleX
 ): StyleSet {
   const styleSet: StyleSet = {};
-  (Object.entries(styleX) as StyleXEntry[]).forEach(([key, val]) => {
-    if (typeof val === "string") {
-      styleSet[key] = [val];
-    } else {
-      styleSet[key] = getCssPropertyValueFromValueDynamic(val, el);
-    }
+  (Object.entries(styleX) as StyleXTuple[]).forEach(([key, val]) => {
+    // @ts-ignore
+    const value = getCssPropertyValueFromValueDynamic(val, el);
+    // @ts-ignore
+    styleSet[key] = value;
   });
 
   return styleSet;
 }
 
 export function getCssPropertyValueFromValueDynamic(
-  value: ValueDynamic,
+  values: Value[],
   el: HTMLElement
-): string | undefined {
-  const [tuples, fallback] = splitValueDynamic(value);
-  for (const [selector, propertyValue, settings] of tuples) {
+): [Value[1], Value[2]?] | null {
+  for (const [selector, propertyValue, settings] of values) {
     if (typeof selector === "boolean") {
       if (selector) {
-        return [propertyValue, ...settings ? [settings] : []];
+        return [
+          propertyValue,
+          ...((settings ? [settings] : []) as unknown as [
+            Value[2] | undefined
+          ]),
+        ];
       } else {
         continue;
       }
-
-    }
-    if (isSelectorMatches(selector, el)) {
-      return [propertyValue, ...settings ? [settings] : []];
+    } else {
+      if (isSelectorMatches(selector, el)) {
+        return [
+          propertyValue,
+          ...((settings ? [settings] : []) as unknown as [
+            Value[2] | undefined
+          ]),
+        ];
+      }
     }
   }
-  return fallback;
+  return null;
 }
 
 export function isSelectorMatches(
-  selector: ValueDynamicTupleSelector,
+  selector: Selector,
   element: HTMLElement
 ) {
-  const [selectorType, selectorValue, selectorHierarchy] =
-    getDynamicTupleSelectorType(selector);
+  const [selectorValue, selectorType, selectorHierarchy] = parseSelector(selector);
 
   if (selectorHierarchy) {
     let hierarchyElement: HTMLElement | undefined;
@@ -187,25 +193,28 @@ export function isSelectorMatches(
     }
   }
 
+  if (selectorType === SelectorType.Boolean) {
+    if (selectorValue) {
+      return true;
+    }
+  }
+
+  const selectorValueStr = selectorValue as string;
+
   switch (selectorType) {
-    case ValueDynamicTupleSelectorType.Media:
-      if (window.matchMedia(selectorValue.replace("@media", "")).matches) {
+    case SelectorType.Media:
+      if (window.matchMedia(selectorValueStr.replace("@media", "")).matches) {
         return true;
       }
       break;
-    case ValueDynamicTupleSelectorType.PseudoHover:
-      if (element.matches(":hover")) {
+    case SelectorType.Pseudo:
+      if (element.matches(selectorValueStr)) {
         return true;
       }
       break;
-    case ValueDynamicTupleSelectorType.PseudoActive:
-      if (element.matches(":active")) {
-        return true;
-      }
-      break;
-    case ValueDynamicTupleSelectorType.Attribute:
+    case SelectorType.Attribute:
       const [attrName, attrValue] =
-        splitValueDynamicTupleSelectorAttribute(selectorValue);
+        splitSelectorTypeAttribute(selectorValueStr);
       const fullAttrName = `data-stylex-${attrName}`;
       if (
         !attrValue
