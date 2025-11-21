@@ -41,6 +41,7 @@ function readAttributeSelectors(value: StyleXJs): Selector[] {
       val.forEach((v) => {
         if (Array.isArray(v)) {
           if (typeof v[0] === "string") {
+            // @ts-ignore
             selectors.add(v[0]);
           }
         }
@@ -51,15 +52,17 @@ function readAttributeSelectors(value: StyleXJs): Selector[] {
   return Array.from(selectors);
 }
 
-export function stylexx(element: HTMLElement, value: StyleXJs) {
+export function stylexx(element: HTMLElement, value: StyleXJs, init?: boolean) {
   const stylex = styleXFromStyleXJs(value);
   const styleSet = convertStyleXToStyleSet(element, stylex);
   Object.entries(styleSet)
     .sort(([a], [b]) => (a === "transform" ? -1 : b === "transform" ? 1 : 0))
     .forEach(([key, val]) => {
-      if (!val) return;
+      if (!val) {
+        val = [null]
+      }
       // @ts-ignore
-      setStyleProperty(element, key, val[0], val[1]);
+      setStyleProperty(init, element, key, val[0], val[1]);
     });
 }
 
@@ -82,6 +85,7 @@ export function stylex(element: HTMLElement, callback: () => StyleXJs) {
     const value = callback();
 
     if (!init) {
+      stylexx(element, value, true);
       init = true;
       const selectors = readAttributeSelectors(value);
       selectors.forEach((selector) => {
@@ -170,7 +174,8 @@ export function stylex(element: HTMLElement, callback: () => StyleXJs) {
             break;
         }
       });
+    } else {
+      stylexx(element, value);
     }
-    stylexx(element, value);
   });
 }

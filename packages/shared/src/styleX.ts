@@ -38,12 +38,13 @@ type SettingValueStyleXJs<CV extends CssValue = CssValue> = [
 ];
 
 type ValueStyleXJs<CV extends CssValue = CssValue> = ((
-  | Value<CV>
+  | ValueJs<CV>
   | string
   | number
 )[]) | CV;
 
 export type Value<CV extends CssValue = CssValue> = [Selector, CV, Settings?];
+export type ValueJs<CV extends CssValue = CssValue> = [string | boolean, CV, Settings?];
 
 export function styleXFromStyleXJs(styleXJs: StyleXJs): StyleX {
   const out = (Object.entries(styleXJs) as unknown as StyleXJsTuple[]).reduce<StyleX>(
@@ -91,11 +92,11 @@ export function isSettingsValueStylexJs(
 export type Settings = {
   transition: number;
   function?: string;
-  onStart?: () => void;
-  onEnd?: () => void;
+  onStart?: (element: HTMLElement) => void;
+  onEnd?: (element: HTMLElement) => void;
 };
 
-export type Selector = (string | Boolean) & {
+export type Selector = (string | boolean) & {
   readonly __brand: unique symbol;
 };
 
