@@ -1,5 +1,4 @@
 // import { getStyleEntries, createCssRulesestBlock } from "@stylex/shared/styleTag";
-// @ts-nocheck
 import {
   type StyleX,
   type StyleSet,
@@ -11,69 +10,113 @@ import {
   SelectorType,
   splitSelectorTypeAttribute,
   type CssValue,
-  isSettingsValueStylexJs,
   type Settings,
 } from "@stylex/shared/styleX";
 import camelCase from "lodash/camelCase";
+//@ts-ignore
+import { animate } from "popmotion";
+
+interface PopmotionRunner {
+  stop: () => void;
+}
+
+interface ExtendedElement {
+  stylex?: {
+    transitions?: Record<string, () => void>;
+  };
+}
+
+interface Property {
+  name: string;
+  value: CssValue | null;
+}
 
 export function setStyleProperty(
-  init: bollean = false,
-  element: HTMLElement,
+  init: boolean = false,
+  element: HTMLElement & ExtendedElement,
   name: string,
   value: CssValue | null,
   settings?: Settings
 ) {
   element.stylex = element.stylex || {};
 
+  let property: Property = {
+    name,
+    value,
+  };
+  let customProperty: Property | null = null;
+
   if (name.startsWith("transform-")) {
-    let functionName = camelCase(name.replace("transform", ""));
-    if (functionName.includes("3D")) {
-      functionName = functionName.replace("3D", "3d");
-    }
-
-    const existingTransform = element.style.transform;
-    const existingTransformParts = parseTransformTuples(existingTransform);
-
-    const foundTuple = existingTransformParts.find(
-      (t) => t[0] === functionName
-    );
-    if (foundTuple) {
-      if (value) {
-        foundTuple[1] = `(${value})`;
-      } else {
-        const index = existingTransformParts.indexOf(foundTuple);
-        existingTransformParts.splice(index, 1);
-      }
-    } else {
-      if (value) {
-        existingTransformParts.push([functionName, `(${value})`]);
-      }
-    }
-
-    value = existingTransformParts.map((t) => t.join("")).join(" ");
-    name = "transform";
+    [property, customProperty] = transformProperty(element, property);
   }
+
+  const customTransition = !!customProperty;
+  let customTransitionRunnerFactory: () => PopmotionRunner;
+  let customTransitionRunner: PopmotionRunner;
 
   if (!init && settings?.transition) {
     element.stylex.transitions = element.stylex.transitions || {};
 
-    const previousListener = element.stylex.transitions[name];
+    const propertyToTransition = customTransition ? customProperty : property;
+
+    const previousListener =
+      element.stylex.transitions[propertyToTransition.name];
     if (typeof previousListener === "function") {
       previousListener();
     }
 
-    const currentTransitionMap = transitionMap(element);
-    currentTransitionMap[name] = [
-      settings.transition + "ms",
-      ...((settings.function ? [settings.function] : []) as [string]),
-    ];
-    element.style.transition = transitionCssValue(currentTransitionMap);
-
-    element.stylex.transitions[name] = () => {
+    if (customTransition) {
+      const startEnd = customTransitionStartEnd(element, propertyToTransition);
+      if (startEnd) {
+        customTransitionRunnerFactory = () => {
+          return animate({
+            from: startEnd.start,
+            to: startEnd.end,
+            duration: settings.transition,
+            onUpdate: (v) => {
+              element.style.setProperty(
+                propertyToTransition.name,
+                `${v.toFixed(2)}${startEnd.unit ? startEnd.unit : ""}`
+              );
+            },
+            onComplete: () => {
+              customTransitionRunner = null;
+              const listener =
+                element.stylex.transitions[propertyToTransition.name];
+              if (typeof listener === "function") {
+                listener();
+              }
+            },
+          });
+        };
+      } else {
+        setStyle(element, propertyToTransition);
+        setStyle(element, property);
+      }
+    } else {
       const currentTransitionMap = transitionMap(element);
-      delete currentTransitionMap[name];
+      currentTransitionMap[propertyToTransition.name] = [
+        settings.transition + "ms",
+        ...((settings.function ? [settings.function] : []) as [string]),
+      ];
       element.style.transition = transitionCssValue(currentTransitionMap);
-      delete element.stylex.transitions[name];
+    }
+
+    element.stylex.transitions[propertyToTransition.name] = () => {
+      if (customTransition) {
+        if (customTransitionRunner) {
+          customTransitionRunner.stop();
+          customTransitionRunner = null;
+        }
+        setStyle(element, propertyToTransition);
+        if (!value) {
+          setStyle(element, property);
+        }
+      } else {
+        const currentTransitionMap = transitionMap(element);
+        delete currentTransitionMap[propertyToTransition.name];
+        element.style.transition = transitionCssValue(currentTransitionMap);
+      }
       if (settings.onEnd) {
         settings.onEnd(element);
       }
@@ -83,23 +126,143 @@ export function setStyleProperty(
       settings.onStart(element);
     }
 
-    element.addEventListener(
-      "transitionend",
-      (e: TransitionEvent) => {
-        if (e.propertyName === name) {
-          const listener = element.stylex.transitions[name];
-          if (typeof listener === "function") {
-            listener();
+    if (!customTransition) {
+      element.addEventListener(
+        "transitionend",
+        (e: TransitionEvent) => {
+          if (e.propertyName === propertyToTransition.name) {
+            const listener =
+              element.stylex.transitions[propertyToTransition.name];
+            if (typeof listener === "function") {
+              listener();
+            }
           }
-        }
-      },
-      { once: true }
-    );
+        },
+        { once: true }
+      );
+    }
   }
 
-  value != null
-    ? element.style.setProperty(name, String(value))
-    : element.style.removeProperty(name);
+
+  if (customProperty) {
+    if (customTransitionRunnerFactory) {
+      if (value) {
+        setStyle(element, property);
+      }
+      customTransitionRunner = customTransitionRunnerFactory();
+    } else {
+      setStyle(element, property);
+      setStyle(element, customProperty);
+    }
+  } else {
+    setStyle(element, property);
+  }
+}
+
+function customTransitionStartEnd(element: HTMLElement, transitionProperty: Property): {
+  start: number;
+  end: number;
+  unit: string | null;
+} | null {
+
+  const currentValue = element.style.getPropertyValue(transitionProperty.name);
+  const startParsed = parseLengthOrPercentage(currentValue);
+  const endParsed = parseLengthOrPercentage(transitionProperty.value)
+
+  if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
+    return {
+      start: startParsed[0],
+      end: endParsed[0],
+      unit: startParsed[1]
+    }
+  } else if (!startParsed ) {
+    return {
+      start: transitionProperty.name.includes("transform-scale") ? 1 : 0,
+      end: endParsed[0],
+      unit: endParsed[1]
+    }
+
+  } else if (!endParsed) {
+    return {
+      start: startParsed[0],
+      end: transitionProperty.name.includes("transform-scale") ? 1 : 0,
+      unit: startParsed[1]
+    }
+  }
+
+  return null
+}
+
+function setStyle(element: HTMLElement, property: Property) {
+  property.value
+    ? element.style.setProperty(property.name, String(property.value))
+    : element.style.removeProperty(property.name);
+}
+
+function parseLengthOrPercentage(value) {
+  if (!value) return null;
+
+  const lengthOrPercentRegex =
+    /^\s*([+-]?(?:\d*\.\d+|\d+))(px|r?em|ex|ch|vh|vw|vmin|vmax|cm|mm|Q|in|pt|pc|%|deg|grad|rad|turn)\s*$/i;
+
+  const numberOnlyRegex = /^\s*([+-]?(?:\d*\.\d+|\d+))\s*$/;
+
+  const withUnit = value.match(lengthOrPercentRegex);
+  if (withUnit) {
+    const [, num, unit] = withUnit;
+    return [Number(num), unit];
+  }
+
+  const numberOnly = value.match(numberOnlyRegex);
+  if (numberOnly) {
+    const [, num] = numberOnly;
+    return [Number(num), null];
+  }
+
+  return null;
+}
+
+function transformProperty(
+  element: HTMLElement,
+  property: Property
+): [Property, Property] {
+  let functionName = camelCase(property.name.replace("transform", ""));
+  if (functionName.includes("3D")) {
+    functionName = functionName.replace("3D", "3d");
+  }
+
+  const existingTransform = element.style.transform;
+  const existingTransformParts = parseTransformTuples(existingTransform);
+
+  const foundTuple = existingTransformParts.find((t) => t[0] === functionName);
+
+  const customProperty = {
+    name: `--${property.name}`,
+    value: property.value,
+  } as Property;
+
+  if (foundTuple) {
+    if (property.value) {
+      foundTuple[1] = `(var(${customProperty.name}))`;
+    } else {
+      const index = existingTransformParts.indexOf(foundTuple);
+      existingTransformParts.splice(index, 1);
+    }
+  } else {
+    if (property.value) {
+      existingTransformParts.push([
+        functionName,
+        `(var(${customProperty.name}))`,
+      ]);
+    }
+  }
+
+  const modifiedProperty = {
+    value: existingTransformParts.map((t) => t.join("")).join(" "),
+    name: "transform",
+  };
+
+  return [modifiedProperty, customProperty];
 }
 
 type TransitionMap = Record<string, [string, string?]>;
@@ -132,12 +295,14 @@ function transitionCssValue(map: TransitionMap) {
 }
 
 function parseTransformTuples(str: string) {
-  const regex = /([a-zA-Z0-9]+)(\([^)]*\))/g;
-  const result = [];
-  let match;
+  const regex = /([a-zA-Z0-9]+)\(((?:[^()]|\([^()]*\))*)\)/g;
+  const result: [string, string][] = [];
+  let match: RegExpExecArray | null;
 
   while ((match = regex.exec(str)) !== null) {
-    result.push([match[1], match[2]]);
+    // match[1] = function name
+    // match[2] = content inside outer parentheses
+    result.push([match[1], `(${match[2]})`]);
   }
 
   return result;

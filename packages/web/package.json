@@ -11,7 +11,8 @@
     "cdn/**/*"
   ],
   "dependencies": {
-    "@stylex/shared": "^0.1.0"
+    "@stylex/shared": "^0.1.0",
+    "popmotion": "^11.0.5"
   },
   "devDependencies": {
     "esbuild": "^0.25.9",

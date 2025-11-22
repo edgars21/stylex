@@ -2,7 +2,9 @@ import type * as CSS from "csstype";
 import { kebabCase } from "lodash-es";
 
 export type StyleSet = {
-  [K in keyof CSS.PropertiesHyphen]: [CSS.PropertiesHyphen<K>, Settings?] | null;
+  [K in keyof CSS.PropertiesHyphen]:
+    | [CSS.PropertiesHyphen<K>, Settings?]
+    | null;
 };
 
 type ValueOf<T> = T[keyof T];
@@ -26,6 +28,8 @@ export type StyleXJs = {
   [CssKey in keyof CSS.Properties]: WithSettingsValueStyleXJs<
     CSS.Properties[CssKey]
   >;
+} & {
+  [K in keyof TransformValues]?: WithSettingsValueStyleXJs<string | number>;
 };
 
 type WithSettingsValueStyleXJs<CV extends CssValue = CssValue> =
@@ -37,48 +41,51 @@ type SettingValueStyleXJs<CV extends CssValue = CssValue> = [
   Settings?
 ];
 
-type ValueStyleXJs<CV extends CssValue = CssValue> = ((
-  | ValueJs<CV>
-  | string
-  | number
-)[]) | CV;
+type ValueStyleXJs<CV extends CssValue = CssValue> =
+  | (ValueJs<CV> | string | number)[]
+  | CV;
 
 export type Value<CV extends CssValue = CssValue> = [Selector, CV, Settings?];
-export type ValueJs<CV extends CssValue = CssValue> = [string | boolean, CV, Settings?];
+export type ValueJs<CV extends CssValue = CssValue> = [
+  string | boolean,
+  CV,
+  Settings?
+];
 
 export function styleXFromStyleXJs(styleXJs: StyleXJs): StyleX {
-  const out = (Object.entries(styleXJs) as unknown as StyleXJsTuple[]).reduce<StyleX>(
-    (acc, [key, value]) => {
-      let globlSettings: Settings | undefined = undefined;
+  const out = (
+    Object.entries(styleXJs) as unknown as StyleXJsTuple[]
+  ).reduce<StyleX>((acc, [key, value]) => {
+    let globlSettings: Settings | undefined = undefined;
+    // @ts-ignore
+    if (isSettingsValueStylexJs(value)) {
+      globlSettings = value[1];
+      value = value[0];
+    }
+
+    if (!Array.isArray(value)) {
+      value = [value];
+    }
+
+    value = value
       // @ts-ignore
-      if (!Array.isArray(value)) {
-        value = [value];
-      } else if (isSettingsValueStylexJs(value)) {
-        globlSettings = value[1];
-        value = value[0];
-      }
+      .map((v) => {
+        if (!Array.isArray(v)) {
+          v = [true, v];
+        }
+        return v;
+      })
+      .map((v) => {
+        if (globlSettings && !v[2]) {
+          v[2] = globlSettings;
+        }
+        return v;
+      });
 
-      value = value
-        // @ts-ignore
-        .map((v) => {
-          if (!Array.isArray(v)) {
-            v = [true, v];
-          }
-          return v;
-        })
-        .map((v) => {
-          if (globlSettings && !v[2]) {
-            v[2] = globlSettings;
-          }
-          return v;
-        });
+    acc[kebabCase(key)] = value;
 
-      acc[kebabCase(key)] = value;
-
-      return acc;
-    },
-    {}
-  );
+    return acc;
+  }, {});
 
   return out;
 }
@@ -86,7 +93,12 @@ export function styleXFromStyleXJs(styleXJs: StyleXJs): StyleX {
 export function isSettingsValueStylexJs(
   value: WithSettingsValueStyleXJs
 ): value is SettingValueStyleXJs {
-  return Array.isArray(value) && value.length === 2 && !Array.isArray(value[1]) && typeof value[1] === "object";
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    !Array.isArray(value[1]) &&
+    typeof value[1] === "object"
+  );
 }
 
 export type Settings = {
@@ -206,23 +218,23 @@ export function splitSelectorTypeAttribute(value: string): [string, string?] {
   return [attrName, attrValue as string | undefined];
 }
 
-// type TransformValues = {
-//   transformRotate: string;
-//   transformRotateX: string;
-//   transformRotateY: string;
-//   transformRotateZ: string;
-//   transformRotate3d: string;
-//   transformTranslate: string;
-//   transformTranslateX: string;
-//   transformTranslateY: string;
-//   transformTranslateZ: string;
-//   transformTranslate3d: string;
-//   transformScale: string;
-//   transformScaleX: string;
-//   transformScaleY: string;
-//   transformScaleZ: string;
-//   transformScale3d: string;
-// };
+type TransformValues = {
+  transformRotate: string;
+  transformRotateX: string;
+  transformRotateY: string;
+  transformRotateZ: string;
+  // transformRotate3d: string;
+  // transformTranslate: string;
+  transformTranslateX: string;
+  transformTranslateY: string;
+  transformTranslateZ: string;
+  // transformTranslate3d: string;
+  transformScale: string;
+  transformScaleX: string;
+  transformScaleY: string;
+  transformScaleZ: string;
+  // transformScale3d: string;
+};
 
 // type TransformValuesKebab = {
 //   "transform-rotate": string;
