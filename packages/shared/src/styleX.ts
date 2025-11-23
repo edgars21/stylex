@@ -177,7 +177,7 @@ function ensureHierarchySafeSelector(
   if (typeof selector === "boolean") return [selector];
 
   let onlyString = selector as string;
-  const regexValidatorHasParentSelector = /^([a-z]+>).*$/;
+  const regexValidatorHasParentSelector = /^(<[a-z]+).*$/;
   const regexValidatorHasChildSelector = /^(>[a-z]+).*$/;
   const regexValidatorHasSiblingSelector = /^(~[a-z]+).*$/;
 
@@ -186,7 +186,7 @@ function ensureHierarchySafeSelector(
     onlyString = onlyString.replace(matchParentSelector[1], "");
     return [
       onlyString as Selector,
-      [HierarchySelectorType.Parent, matchParentSelector[1].slice(0, -1)],
+      [HierarchySelectorType.Parent, matchParentSelector[1].slice(1)],
     ];
   }
 
