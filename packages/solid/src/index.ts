@@ -15,6 +15,7 @@ import {
   createEventListenerWithCleanupFactory,
   createObserveWithCleanupFactory,
   createMediaListenerWithCleanupFactory,
+  isCombinedSelector,
 } from "@stylex/web";
 import "solid-js";
 import { uniq, kebabCase } from "lodash-es";
@@ -45,7 +46,7 @@ function readAttributeSelectors(value: StyleXJs): Selector[] {
             selectors.add(v[0]);
           }
         }
-      })
+      });
     }
   });
 
@@ -59,7 +60,7 @@ export function stylexx(element: HTMLElement, value: StyleXJs, init?: boolean) {
     .sort(([a], [b]) => (a === "transform" ? -1 : b === "transform" ? 1 : 0))
     .forEach(([key, val]) => {
       if (!val) {
-        val = [null]
+        val = [null];
       }
       // @ts-ignore
       setStyleProperty(init, element, key, val[0], val[1]);
@@ -87,92 +88,108 @@ export function stylex(element: HTMLElement, callback: () => StyleXJs) {
     if (!init) {
       stylexx(element, value, true);
       init = true;
+      // @ts-ignore
+      if (value.log) {
+        console.log(element, value);
+      }
       const selectors = readAttributeSelectors(value);
       selectors.forEach((selector) => {
-        const [selectorValue, selectorType, selectorHierarchy] =
-          parseSelector(selector);
+        let singleSelectors: Selector[] = [selector];
 
-        let elementToCheck = element;
-        if (selectorHierarchy) {
-          let hierarchyElement: HTMLElement | undefined;
-          switch (selectorHierarchy[0]) {
-            case HierarchySelectorType.Parent:
-              hierarchyElement = element.closest(
-                `[data-stylex-id="${selectorHierarchy[1]}"]`
-              ) as HTMLElement | undefined;
-              break;
-            case HierarchySelectorType.Child:
-              hierarchyElement = element.querySelector(
-                `[data-stylex-id="${selectorHierarchy[1]}"]`
-              ) as HTMLElement | undefined;
-              break;
-            case HierarchySelectorType.Sibling:
-              hierarchyElement = element.parentElement?.querySelector(
-                `[data-stylex-id="${selectorHierarchy[1]}"]`
-              ) as HTMLElement | undefined;
-              break;
-          }
-          if (hierarchyElement) {
-            elementToCheck = hierarchyElement;
+        if (isCombinedSelector(selector)) {
+          if (typeof selector === "string") {
+            singleSelectors = selector.split("&").map((s) => s.trim()) as Selector[];
           } else {
-            return false;
+            singleSelectors = [];
           }
         }
 
-        if (selectorType === SelectorType.Boolean) return;
-        const selectorValueStr = selectorValue as string;
+        singleSelectors.forEach((selector) => {
+          const [selectorValue, selectorType, selectorHierarchy] =
+            parseSelector(selector);
 
-        switch (selectorType) {
-          case SelectorType.Media:
-            listeneMediaWithCleanup(
-              selectorValueStr.replace("@media", ""),
-              () => {
-                setRerender((v) => v + 1);
-              }
-            );
-            break;
-          case SelectorType.Pseudo:
-            if (selectorValueStr === ":hover") {
-              listenWithCleanup(elementToCheck, "mouseenter", () => {
-                setRerender((v) => v + 1);
-              });
-              listenWithCleanup(elementToCheck, "mouseleave", () => {
-                setRerender((v) => v + 1);
-              });
-            } else if (selectorValueStr === ":active") {
-              let isDown = false;
-              listenWithCleanup(elementToCheck, "pointerdown", () => {
-                isDown = true;
-                setRerender((v) => v + 1);
-              });
-              listenWithCleanup(window, "pointerup", () => {
-                if (isDown) {
-                  isDown = false;
+          let elementToCheck = element;
+          if (selectorHierarchy) {
+            let hierarchyElement: HTMLElement | undefined;
+            switch (selectorHierarchy[0]) {
+              case HierarchySelectorType.Parent:
+                hierarchyElement = element.closest(
+                  `[data-stylex-id="${selectorHierarchy[1]}"]`
+                ) as HTMLElement | undefined;
+                break;
+              case HierarchySelectorType.Child:
+                hierarchyElement = element.querySelector(
+                  `[data-stylex-id="${selectorHierarchy[1]}"]`
+                ) as HTMLElement | undefined;
+                break;
+              case HierarchySelectorType.Sibling:
+                hierarchyElement = element.parentElement?.querySelector(
+                  `[data-stylex-id="${selectorHierarchy[1]}"]`
+                ) as HTMLElement | undefined;
+                break;
+            }
+            if (hierarchyElement) {
+              elementToCheck = hierarchyElement;
+            } else {
+              return false;
+            }
+          }
+
+          if (selectorType === SelectorType.Boolean) return;
+          const selectorValueStr = selectorValue as string;
+
+          switch (selectorType) {
+            case SelectorType.Media:
+              listeneMediaWithCleanup(
+                selectorValueStr.replace("@media", ""),
+                () => {
                   setRerender((v) => v + 1);
                 }
-              });
-            }
-            break;
-          case SelectorType.Attribute:
-            const [attrName, attrValuey] =
-              splitSelectorTypeAttribute(selectorValueStr);
-            const fullAttrName = `data-stylex-${attrName}`;
+              );
+              break;
+            case SelectorType.Pseudo:
+              if (selectorValueStr === ":hover") {
+                listenWithCleanup(elementToCheck, "mouseenter", () => {
+                  setRerender((v) => v + 1);
+                });
+                listenWithCleanup(elementToCheck, "mouseleave", () => {
+                  setRerender((v) => v + 1);
+                });
+              } else if (selectorValueStr === ":active") {
+                let isDown = false;
+                listenWithCleanup(elementToCheck, "pointerdown", () => {
+                  isDown = true;
+                  setRerender((v) => v + 1);
+                });
+                listenWithCleanup(window, "pointerup", () => {
+                  if (isDown) {
+                    isDown = false;
+                    setRerender((v) => v + 1);
+                  }
+                });
+              }
+              break;
+            case SelectorType.Attribute:
+              const [attrName, attrValuey] =
+                splitSelectorTypeAttribute(selectorValueStr);
+              const fullAttrName = `data-stylex-${attrName}`;
 
-            observeWithCleanup(
-              elementToCheck,
-              { attributes: true },
-              (mutations) => {
-                for (const m of mutations) {
-                  if (m.type === "attributes") {
-                    if (m.attributeName === fullAttrName) {
-                      setRerender((v) => v + 1);
+              observeWithCleanup(
+                elementToCheck,
+                { attributes: true },
+                (mutations) => {
+                  for (const m of mutations) {
+                    if (m.type === "attributes") {
+                      if (m.attributeName === fullAttrName) {
+                        setRerender((v) => v + 1);
+                      }
                     }
                   }
                 }
-              }
-            );
-            break;
-        }
+              );
+              break;
+          }
+        });
       });
     } else {
       stylexx(element, value);

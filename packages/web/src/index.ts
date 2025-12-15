@@ -143,7 +143,6 @@ export function setStyleProperty(
     }
   }
 
-
   if (customProperty) {
     if (customTransitionRunnerFactory) {
       if (value) {
@@ -159,38 +158,39 @@ export function setStyleProperty(
   }
 }
 
-function customTransitionStartEnd(element: HTMLElement, transitionProperty: Property): {
+function customTransitionStartEnd(
+  element: HTMLElement,
+  transitionProperty: Property
+): {
   start: number;
   end: number;
   unit: string | null;
 } | null {
-
   const currentValue = element.style.getPropertyValue(transitionProperty.name);
   const startParsed = parseLengthOrPercentage(currentValue);
-  const endParsed = parseLengthOrPercentage(transitionProperty.value)
+  const endParsed = parseLengthOrPercentage(transitionProperty.value);
 
   if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
     return {
       start: startParsed[0],
       end: endParsed[0],
-      unit: startParsed[1]
-    }
-  } else if (!startParsed ) {
+      unit: startParsed[1],
+    };
+  } else if (!startParsed) {
     return {
       start: transitionProperty.name.includes("transform-scale") ? 1 : 0,
       end: endParsed[0],
-      unit: endParsed[1]
-    }
-
+      unit: endParsed[1],
+    };
   } else if (!endParsed) {
     return {
       start: startParsed[0],
       end: transitionProperty.name.includes("transform-scale") ? 1 : 0,
-      unit: startParsed[1]
-    }
+      unit: startParsed[1],
+    };
   }
 
-  return null
+  return null;
 }
 
 function setStyle(element: HTMLElement, property: Property) {
@@ -354,6 +354,29 @@ export function getCssPropertyValueFromValueDynamic(
 }
 
 export function isSelectorMatches(selector: Selector, element: HTMLElement) {
+  if (isCombinedSelector(selector)) {
+    return isCombinedSelectorMatches(selector, element);
+  }
+
+  return isSingleSelectorMatches(selector, element);
+}
+
+export function isCombinedSelector(selector: Selector): boolean {
+  if (typeof selector === "string") {
+    return selector.includes("&");
+  }
+  return false;
+}
+
+export function isCombinedSelectorMatches(selector: Selector, element: HTMLElement) {
+  if (typeof selector === "string") {
+    const singles =  selector.split("&").map(s => s.trim()).filter(Boolean);
+    return singles.every(s => isSingleSelectorMatches((s as Selector), element));
+  }
+  return false;
+}
+
+export function isSingleSelectorMatches(selector: Selector, element: HTMLElement) {
   const [selectorValue, selectorType, selectorHierarchy] =
     parseSelector(selector);
 
