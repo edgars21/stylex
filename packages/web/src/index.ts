@@ -46,7 +46,7 @@ export function setStyleProperty(
   };
   let customProperty: Property | null = null;
 
-  if (name.startsWith("transform-")) {
+  if (name.startsWith("transform-") && name !== "transform-origin") {
     [property, customProperty] = transformProperty(element, property);
   }
 
@@ -357,7 +357,6 @@ export function isSelectorMatches(selector: Selector, element: HTMLElement) {
   if (isCombinedSelector(selector)) {
     return isCombinedSelectorMatches(selector, element);
   }
-
   return isSingleSelectorMatches(selector, element);
 }
 
