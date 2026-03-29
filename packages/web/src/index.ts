@@ -1,3 +1,5 @@
+import { kebabCase } from "lodash-es";
+
 type Setter = Record<string, ValueofSetter>;
 type ValueofSetter =
   | string
@@ -5,10 +7,13 @@ type ValueofSetter =
   | (string | number | [string, string | number])[];
 
 export class StyleX {
+  #propertyMap = new Map<string, StyleXValue>();
+  #element: HTMLElement;
   constructor(element: HTMLElement, initialData?: Setter) {
     Object.entries(initialData || {}).forEach(([key, value]) => {
       const stylexValue = creatStylexValue(value);
       if (stylexValue.length) {
+        this.#propertyMap.set(key, stylexValue);
         this[key] = stylexValue;
       }
     });
@@ -19,19 +24,133 @@ export class StyleX {
         if (typeof value === "undefined") {
           throw new Error(`Cannot set ${String(prop)} to undefined`);
         }
-
-        console.log(`Setting ${String(prop)} =`, value);
-
         target[prop] = value;
         return true;
+      },
+      get(target, prop, receiver) {
+        if (prop === Symbol.iterator) {
+          return target[Symbol.iterator].bind(target);
+        }
+        return Reflect.get(target, prop, receiver);
       },
     });
 
     // @ts-ignore
+    const previousStyleX = element.stylex as StyleX | undefined;
+    if (previousStyleX) {
+      const previousKeys = Array.from(previousStyleX).map(([key]) => key);
+      const currentKeys = Array.from(this).map(([key]) => key);
+      const missingKeys = previousKeys.filter(
+        (key) => !currentKeys.includes(key),
+      );
+      for (const key of missingKeys) {
+        removeStyle(element, key);
+      }
+    }
+    // @ts-ignore
     element.stylex = proxy;
+    this.#element = element;
+
+    evaluateAandApplyStylex(this, element);
 
     return proxy;
   }
+
+  [Symbol.iterator](): Iterator<[string, StyleXValue]> {
+    return this.#propertyMap[Symbol.iterator]();
+  }
+}
+
+function evaluateAandApplyStylex(stylex: StyleX, element: HTMLElement) {
+  Array.from(stylex).forEach(([propertyName, stylexValue]) => {
+    evaluateAndApplyStylexValue(propertyName, stylexValue, element);
+  });
+}
+
+function evaluateAndApplyStylexValue(
+  propertyName: string,
+  value: StyleXValue,
+  element: HTMLElement,
+) {
+  const evaluatedValue = evalulateStylexValue(value, element);
+  if (evaluatedValue) {
+    applyStylexValue(element, {
+      name: propertyName,
+      value: String(evaluatedValue),
+    });
+  }
+}
+
+function evalulateStylexValue(
+  value: StyleXValue,
+  element: HTMLElement,
+): string | number | null {
+  const match = (
+    Array.from(value) as [StringSelector | "default", string | number][]
+  ).find(([stringSelector, val]) => {
+    if (stringSelector === "default") {
+      return true;
+    } else if (isSingleSelectorMatches(selector(stringSelector), element)) {
+      return true;
+    }
+  });
+
+  return match ? match[1] : null;
+}
+
+export function isSingleSelectorMatches(
+  selector: Selector,
+  element: HTMLElement,
+) {
+  if (selector.hierarchySelector) {
+    let hierarchyElement: HTMLElement | undefined;
+    switch (selector.hierarchySelector[0]) {
+      case HierarchySelectorType.Parent:
+        hierarchyElement = element.closest(
+          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
+        ) as HTMLElement | undefined;
+        break;
+      case HierarchySelectorType.Child:
+        hierarchyElement = element.querySelector(
+          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
+        ) as HTMLElement | undefined;
+        break;
+      case HierarchySelectorType.Sibling:
+        hierarchyElement = element.parentElement?.querySelector(
+          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
+        ) as HTMLElement | undefined;
+        break;
+    }
+    if (hierarchyElement) {
+      element = hierarchyElement;
+    } else {
+      return false;
+    }
+  }
+
+  switch (selector.kind) {
+    case SelectorType.Media:
+      if (window.matchMedia(selector.mediaMatch).matches) {
+        return true;
+      }
+      break;
+    case SelectorType.Pseudo:
+      if (element.matches(selector.pseudoMatch)) {
+        return true;
+      }
+      break;
+    case SelectorType.Attribute:
+      const fullAttrName = `data-stylex-${selector.name}`;
+      if (
+        !selector.value
+          ? element?.hasAttribute(fullAttrName)
+          : element?.getAttribute(fullAttrName) === selector.value
+      ) {
+        return true;
+      }
+      break;
+  }
+  return false;
 }
 
 type StyleXValue = {} & {
@@ -40,9 +159,9 @@ type StyleXValue = {} & {
 };
 function creatStylexValue(setter: ValueofSetter): StyleXValue {
   const proxybOject = {};
-  const mapValue = new Map<string, string | number>();
+  const mapValue = new Map<StringSelector, string | number>();
   let defaultValue: string | number;
-  let values: [string, string | number][];
+  let values: [StringSelector, string | number][];
   if (typeof setter === "string" || typeof setter === "number") {
     defaultValue = setter;
   } else {
@@ -54,7 +173,7 @@ function creatStylexValue(setter: ValueofSetter): StyleXValue {
     }
     const onlyWithValidSelector = setter.filter(
       (s) => Array.isArray(s) && isStringSelector(s[0]),
-    ) as [string, string | number][];
+    ) as [StringSelector, string | number][];
     if (onlyWithValidSelector.length > 0) {
       values = onlyWithValidSelector;
     }
@@ -66,7 +185,7 @@ function creatStylexValue(setter: ValueofSetter): StyleXValue {
     });
   }
   if (defaultValue) {
-    mapValue.set("default", defaultValue);
+    mapValue.set("default" as StringSelector, defaultValue);
   }
 
   const arrayValue = Array.from(mapValue);
@@ -127,7 +246,7 @@ type StringSelector = string & {
 function stringSelector(selector: Selector): StringSelector {
   let selectorValue: string;
   if (selector.kind === SelectorType.Media) {
-    selectorValue = selector.mediaMatch;
+    selectorValue = `@media ${selector.mediaMatch}`;
   } else if (selector.kind === SelectorType.Pseudo) {
     selectorValue = selector.pseudoMatch;
   } else {
@@ -161,7 +280,7 @@ function selector(value: StringSelector): Selector {
     if (isStringMediaSelector(valueWithoutHierarchy)) {
       return {
         kind: SelectorType.Media,
-        mediaMatch: value,
+        mediaMatch: value.replace("@media ", "").replace("@media", ""),
         ...(hierarchySelector && { hierarchySelector }),
       };
     } else if (isStringPseudoSelector(valueWithoutHierarchy)) {
@@ -265,10 +384,10 @@ interface Property {
   value: string;
 }
 
-function setStyle(element: HTMLElement, property: Property) {
-  element.style.setProperty(property.name, String(property.value));
+function applyStylexValue(element: HTMLElement, property: Property) {
+  element.style.setProperty(kebabCase(property.name), String(property.value));
 }
 
 function removeStyle(element: HTMLElement, propertyName: string) {
-  element.style.removeProperty(propertyName);
+  element.style.removeProperty(kebabCase(propertyName));
 }

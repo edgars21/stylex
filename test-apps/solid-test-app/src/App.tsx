@@ -1,37 +1,28 @@
-import { stylex } from "@stylex/solid";
-import { createSignal } from "solid-js";
+import { StyleX } from "@stylex/web";
 
 export default function App() {
+  let test;
   return (
-    <div
+    <div>
+      <span 
       ref={(el) => {
-        stylex(el, () => ({
-          color: [
-            [
-              "@hover",
-              "blue",
-            ],
-            "red",
-          ],
-        }));
-      }}
-    >
-      <span>Outer</span>
-      <Inner />
-    </div>
-  );
-}
+        test = el;
+        console.log("Creating StyleX for element", el);
+        const out = new StyleX(el!, {
+          color: "red",
+          backgroundColor: [[":hover", "pink"],[":active", "red"], "blue"],
+        });
+        console.log("StyleX instance created:", out);
 
-function Inner() {
-  const [on, setOn] = createSignal(false);
-  return (
-    <div
-      use:stylex={{
-        "backgroundColor": on() ? "red" : "blue",
       }}
-      onClick={() => setOn(!on())}
-    >
-      Inner
+      onClick={() => {
+        if (test) {
+          new StyleX(test!, {
+            backgroundColor: "green",
+          });
+        }
+      }}
+      >Outer</span>
     </div>
   );
 }
