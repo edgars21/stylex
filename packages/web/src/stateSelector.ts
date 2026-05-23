@@ -3,9 +3,7 @@ export type StateSelector =
   | CoreStateWtithHierarchySelector
   | CoreState;
 
-export function stateSelectorParsed(
-  value: StateSelector,
-): StateSelectorParsed {
+export function stateSelectorParsed(value: StateSelector): StateSelectorParsed {
   if (isCombinedStateSelector(value)) {
     return combinedStateSelectorParsed(value);
   } else if (isCoreStateWtithHierarchySelector(value)) {
@@ -13,8 +11,7 @@ export function stateSelectorParsed(
   } else {
     return coreStateParsed(value);
   }
-}  
-
+}
 
 export function isStateSelector(value: string): value is StateSelector {
   if (isCombinedStateSelector(value)) {
@@ -23,15 +20,16 @@ export function isStateSelector(value: string): value is StateSelector {
     return true;
   } else if (isCoreState(value)) {
     return true;
-  } return false;
-}  
+  }
+  return false;
+}
 
 export type StateSelectorParsed =
   | CombinedStateSelectorParsed
   | CoreStateWtithHierarchyParsed
   | CoreStateParsed;
 
-type CoreState = MediaState | AttributeState | PseudoState;
+export type CoreState = MediaState | AttributeState | PseudoState;
 
 type MediaState = string & {
   brand: CoreStateType.Media;
@@ -45,7 +43,18 @@ type PseudoState = string & {
   brand: CoreStateType.Pseudo;
 };
 
-type CoreStateParsed =
+export function coreState(selector: CoreStateParsed): CoreState {
+  switch (selector.kind) {
+    case CoreStateType.Media:
+      return selector.mediaMatch as CoreState;
+    case CoreStateType.Pseudo:
+      return selector.pseudoMatch as CoreState;
+    case CoreStateType.Attribute:
+      return `@${selector.name}${selector.value ? `=${selector.value}` : ""}` as CoreState;
+  }
+}
+
+export type CoreStateParsed =
   | MediaStateParsed
   | AttributeStateParsed
   | PseudoStateParsed;
@@ -67,9 +76,9 @@ type PseudoStateParsed = {
 };
 
 export enum CoreStateType {
-  Media,
-  Pseudo,
-  Attribute,
+  Media = "Media",
+  Pseudo = "Pseudo",
+  Attribute = "Attribute",
 }
 
 export function coreStateParsed(selector: CoreState): CoreStateParsed {
@@ -127,7 +136,7 @@ type CoreStateWithSiblingHierarchySelector = string & {
   brand: "CoreStateWithSiblingHierarchySelector";
 };
 
-type CoreStateWtithHierarchyParsed =
+export type CoreStateWtithHierarchyParsed =
   | CoreStateWithParentHierarchyParsed
   | CoreStateWithChildHierarchyParsed
   | CoreStateWithSiblingHierarchyParsed;
@@ -151,9 +160,9 @@ type CoreStateWithSiblingHierarchyParsed = {
 };
 
 export enum HierarchySelectorType {
-  Parent,
-  Child,
-  Sibling,
+  Parent = "Parent",
+  Child = "Child",
+  Sibling = "Sibling",
 }
 
 export function coreStateWtithHierarchyParsed(
@@ -302,7 +311,7 @@ export function isCoreStateOrCoreStateWtithHierarchyMatches(
       }
       break;
     case CoreStateType.Attribute:
-      const fullAttrName = `data-stylex-${coreStateSelector.name}`;
+      const fullAttrName = `${coreStateSelector.name}`;
       if (
         !coreStateSelector.value
           ? element?.hasAttribute(fullAttrName)
@@ -316,7 +325,10 @@ export function isCoreStateOrCoreStateWtithHierarchyMatches(
 }
 
 export function isCoreStateOrCoreStateWtithHierarchyOrCombinedStateMatches(
-  selector: CoreStateParsed | CoreStateWtithHierarchyParsed | CombinedStateSelectorParsed,
+  selector:
+    | CoreStateParsed
+    | CoreStateWtithHierarchyParsed
+    | CombinedStateSelectorParsed,
   element: HTMLElement,
 ) {
   if (Array.isArray(selector)) {

@@ -5,7 +5,18 @@ import {
   isStateSelector,
   isCoreStateOrCoreStateWtithHierarchyOrCombinedStateMatches,
   stateSelectorParsed,
+  type CoreStateParsed,
+  CoreStateType,
+  HierarchySelectorType,
+  type CoreStateWtithHierarchyParsed,
+  coreState,
+  type CoreState,
+  coreStateParsed,
 } from "./stateSelector";
+import {
+  createEventListenerWithCleanupFactory,
+  createMutationObserverWithCleanupFactory,
+} from "./dom";
 
 export type StylexConstructor = StylexDefinitionStateful | StylexDefinition;
 
@@ -77,7 +88,37 @@ type Stylex = Record<StylexPropertyName, StylexValueSimple>;
 export class StyleX {
   #propertyMap = new Map<string, StylexValue>();
   #element: HTMLElement;
+  #dirty: boolean = false;
+  #addListenerWithCleanup = createEventListenerWithCleanupFactory();
+  #addMutationObserverWithCleanup = createMutationObserverWithCleanupFactory();
+  #hoverObservers: Set<StyleX> = new Set();
+  #hoverListeners: [() => void, () => void] | null = null;
+  #activeObservers: Set<StyleX> = new Set();
+  #activeListeners: [() => void, () => void] | null = null;
+  #attributeObservers: Set<StyleX> = new Set();
+  #attributeListener: (() => void) | null = null;
+
+  #notifyHoverObservers() {
+    for (const observer of this.#hoverObservers) {
+      observer.dirty = true;
+    }
+  }
+
+  #notifyActiveObservers() {
+    for (const observer of this.#activeObservers) {
+      observer.dirty = true;
+    }
+  }
+
+  #notifyAttributeObservers() {
+    for (const observer of this.#attributeObservers) {
+      observer.dirty = true;
+    }
+  }
+
   constructor(element: HTMLElement, initialData?: StylexConstructor) {
+    this.#element = element;
+
     if (initialData) {
       Object.entries(initialData).forEach(([key, value]) => {
         const stylexValue = new StylexValue(
@@ -95,10 +136,10 @@ export class StyleX {
 
     const proxy = new Proxy(this, {
       set(target, prop, value) {
-        // guard logic
         if (typeof value === "undefined") {
           throw new Error(`Cannot set ${String(prop)} to undefined`);
         }
+        // @ts-ignore
         target[prop] = value;
         return true;
       },
@@ -106,7 +147,13 @@ export class StyleX {
         if (prop === Symbol.iterator) {
           return target[Symbol.iterator].bind(target);
         }
-        return Reflect.get(target, prop, target);
+        const value = Reflect.get(target, prop, target);
+
+        if (typeof value === "function") {
+          return value.bind(target);
+        }
+
+        return value;
       },
     });
 
@@ -124,10 +171,9 @@ export class StyleX {
     }
     // @ts-ignore
     element.stylex = proxy;
-    this.#element = element;
 
     evaluateAandApplyStylex(this, element);
-    setupStateObservers(this, element);
+    evaluateForObservationStylex(this);
 
     return proxy;
   }
@@ -138,6 +184,110 @@ export class StyleX {
 
   get length() {
     return this.#propertyMap.size;
+  }
+
+  get dirty() {
+    return this.#dirty;
+  }
+
+  set dirty(value: boolean) {
+    this.#dirty = value;
+    evaluateAandApplyStylex(this, this.#element);
+  }
+
+  addHoverObserver(observer: StyleX) {
+    this.#hoverObservers.add(observer);
+    this.#addRemoveHoverListeners();
+  }
+
+  removeHoverObserver(observer: StyleX) {
+    this.#hoverObservers.delete(observer);
+    this.#addRemoveHoverListeners();
+  }
+
+  #addRemoveHoverListeners() {
+    if (this.#hoverObservers.size) {
+      this.#hoverListeners = [
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "mouseenter",
+          () => this.#notifyHoverObservers(),
+          { passive: true },
+        ),
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "mouseleave",
+          () => this.#notifyHoverObservers(),
+          { passive: true },
+        ),
+      ];
+    } else {
+      if (this.#hoverListeners) {
+        this.#hoverListeners[0]();
+        this.#hoverListeners[1]();
+        this.#hoverListeners = null;
+      }
+    }
+  }
+
+  addActiveObserver(observer: StyleX) {
+    this.#activeObservers.add(observer);
+    this.#addRemoveActiveListeners();
+  }
+
+  removeActiveObserver(observer: StyleX) {
+    this.#activeObservers.delete(observer);
+    this.#addRemoveActiveListeners();
+  }
+
+  #addRemoveActiveListeners() {
+    if (this.#activeObservers.size) {
+      this.#activeListeners = [
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "pointerdown",
+          () => this.#notifyActiveObservers(),
+          { passive: true },
+        ),
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "pointerup",
+          () => this.#notifyActiveObservers(),
+          { passive: true },
+        ),
+      ];
+    } else {
+      if (this.#activeListeners) {
+        this.#activeListeners[0]();
+        this.#activeListeners[1]();
+        this.#activeListeners = null;
+      }
+    }
+  }
+
+  addAttributeObserver(observer: StyleX) {
+    this.#attributeObservers.add(observer);
+    this.#addRemoveAttributeListeners();
+  }
+
+  removeAttributeObserver(observer: StyleX) {
+    this.#attributeObservers.delete(observer);
+    this.#addRemoveAttributeListeners();
+  }
+
+  #addRemoveAttributeListeners() {
+    if (this.#attributeObservers.size) {
+      this.#attributeListener = this.#addMutationObserverWithCleanup[0](
+        this.element,
+        { attributes: true },
+        () => this.#notifyAttributeObservers(),
+      );
+    } else {
+      if (this.#attributeListener) {
+        this.#attributeListener();
+        this.#attributeListener = null;
+      }
+    }
   }
 
   apply(value: Record<string, string>) {
@@ -152,7 +302,13 @@ export class StyleX {
   }
 
   [Symbol.iterator](): IterableIterator<[StylexPropertyName, StylexValue]> {
+    // @ts-ignore
     return this.#propertyMap[Symbol.iterator]();
+  }
+
+  onDestroy() {
+    this.#addListenerWithCleanup[1]();
+    this.#addMutationObserverWithCleanup[1]();
   }
 }
 
@@ -160,13 +316,6 @@ function evaluateAandApplyStylex(stylex: StyleX, element: HTMLElement) {
   Array.from(stylex).forEach(([propertyName, stylexValue]) => {
     evaluateAndApplyStylexValue(propertyName, stylexValue, element);
   });
-}
-
-function setupStateObservers(stylex: StyleX, element: HTMLElement) {
-  console.log("observers")
-  for (const [propertyName, stylexValue] of stylex) {
-    console.log("name is", propertyName, "value is", stylexValue);
-  }
 }
 
 function evaluateAndApplyStylexValue(
@@ -199,18 +348,94 @@ function evalulateStylexValue(
       return val;
     }
   }
-
   return null;
 }
 
-type States = "default" | `@${string}` | `:${string}`;
+function evaluateForObservationStylex(stylex: StyleX) {
+  Array.from(stylex).forEach(([propertyName, stylexValue]) => {
+    evaluateForObservationStylexValue(stylexValue, stylex);
+  });
+}
+
+function evaluateForObservationStylexValue(value: StylexValue, stylex: Stylex) {
+  const coreStates = new Map<Stylex, Set<CoreState>>();
+  // const coreStates = new Set<CoreState>();
+  for (const [stateSelector] of value) {
+    if (stateSelector !== "default") {
+      const parsedSelector = stateSelectorParsed(stateSelector);
+      const inner = [] as (CoreStateParsed | CoreStateWtithHierarchyParsed)[];
+      if (Array.isArray(parsedSelector)) {
+        parsedSelector.forEach((s) => {
+          inner.push(s);
+        });
+      } else {
+        inner.push(parsedSelector);
+      }
+      inner.forEach((s) => {
+        if ("state" in s) {
+          let hierarchyElement: HTMLElement | undefined;
+          switch (s.kind) {
+            case HierarchySelectorType.Parent:
+              hierarchyElement = stylex.element.closest(
+                `[data-stylex-id="${s.id}"]`,
+              ) as HTMLElement | undefined;
+              break;
+            case HierarchySelectorType.Child:
+              hierarchyElement = stylex.element.querySelector(
+                `[data-stylex-id="${s.id}"]`,
+              ) as HTMLElement | undefined;
+              break;
+            case HierarchySelectorType.Sibling:
+              hierarchyElement = stylex.element.parentElement?.querySelector(
+                `[data-stylex-id="${s.id}"]`,
+              ) as HTMLElement | undefined;
+              break;
+          }
+
+          if (hierarchyElement.stylex) {
+            const stylex = hierarchyElement.stylex;
+            let set = coreStates.get(stylex);
+            if (!set) {
+              set = new Set<CoreState>();
+              coreStates.set(stylex, set);
+            }
+            set.add(coreState(s.state));
+          }
+        } else {
+          let set = coreStates.get(stylex);
+          if (!set) {
+            set = new Set<CoreState>();
+            coreStates.set(stylex, set);
+          }
+          set.add(coreState(s));
+        }
+      });
+    }
+  }
+
+  console.log("-----> hierrchy, ", coreStates);
+  coreStates.forEach((states, hierarchyStylex) => {
+    states.forEach((state) => {
+      const parsedState = coreStateParsed(state);
+      if (parsedState.kind === CoreStateType.Pseudo) {
+        if (parsedState.pseudoMatch === ":hover") {
+          hierarchyStylex.addHoverObserver(stylex);
+        } else if (parsedState.pseudoMatch === ":active") {
+          hierarchyStylex.addActiveObserver(stylex);
+        }
+      } else if (parsedState.kind === CoreStateType.Attribute) {
+        hierarchyStylex.addAttributeObserver(stylex);
+      }
+    });
+  });
+}
+
 type StateSelectorwithDefault = StateSelector | "default";
 export class StylexValue {
   #stateMap = new Map<StateSelectorwithDefault, StylexValueSimple>();
   #stylex: StyleX;
   #proeptyName: StylexPropertyName;
   default?: StylexValueSimple;
-  current?: StylexValueSimple;
   [key: `@${string}`]: StylexValueSimple | undefined;
   [key: `:${string}`]: StylexValueSimple | undefined;
   constructor(
@@ -260,6 +485,11 @@ export class StylexValue {
         });
       }
     }
+  }
+
+  get current() {
+    // @ts-ignore
+    return this.#stylex.element.style[this.#proeptyName];
   }
 
   get length() {
@@ -359,6 +589,7 @@ interface Property {
 function applyValidCssPropertyValue(element: HTMLElement, property: Property) {
   if (isPropertyValueAnimation(property.value)) {
     const currentTransition = transitionMap(
+      // @ts-ignore
       window.getComputedStyle(element).transition,
     );
     element.addEventListener(
@@ -375,6 +606,7 @@ function applyValidCssPropertyValue(element: HTMLElement, property: Property) {
       },
       { once: true },
     );
+    // @ts-ignore
     currentTransition[property.name] = [
       property.value.duration,
       property.value.timingFunction,
@@ -385,6 +617,7 @@ function applyValidCssPropertyValue(element: HTMLElement, property: Property) {
       "valid tarnsition: ",
       validCssTransitionPropertyValue(currentTransition),
     );
+    // @ts-ignore
     property.value = property.value.value;
   }
 
