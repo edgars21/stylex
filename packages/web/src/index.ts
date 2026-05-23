@@ -1,4 +1,71 @@
+// @ts-nocheck
 import { kebabCase } from "lodash-es";
+import {
+  StateSelector,
+  isStateSelector,
+  isCoreStateOrCoreStateWtithHierarchyOrCombinedStateMatches,
+  stateSelectorParsed,
+} from "./stateSelector";
+
+export type StylexConstructor = StylexDefinitionStateful | StylexDefinition;
+
+export type StylexDefinitionStateful = (
+  | StylexDefinition
+  | [string, StylexDefinition]
+)[];
+
+export type StylexDefinition = Record<
+  StylexPropertyName,
+  StylexDefinitionValue
+>;
+
+type StylexDefinitionValue = StylexValueSimple | StylexDefinitionValueStateful;
+
+type ValidCssPropertyNameCamelCase = string & {
+  brand: "ValidCssPropertyNameCamelCase";
+};
+
+type ValidCssPropertyNameKebabCase = string & {
+  brand: "ValidCssPropertyNameKebabCase";
+};
+
+type StylexPropertyName =
+  | ValidCssPropertyNameCamelCase
+  | AdditionalPropertyName;
+type StylexDefinitionValueStateful = (
+  | StylexValueSimple
+  | [string, StylexValueSimple]
+)[];
+
+type StylexValueSimple = ValidCssPropertyValue | AdditionalPropertyValue;
+
+type ValidCssPropertyValue = string & {
+  brand: "ValidCssPropertyValue";
+};
+
+type AdditionalPropertyName = keyof AdditionalPropertiesTransform;
+
+type AdditionalPropertyValue = string & {
+  brand: "AdditionalPropertyValue";
+};
+
+type AdditionalPropertiesTransform = {
+  transformRotate: string;
+  transformRotateX: string;
+  transformRotateY: string;
+  transformRotateZ: string;
+  transformRotate3d: string;
+  transformTranslate: string;
+  transformTranslateX: string;
+  transformTranslateY: string;
+  transformTranslateZ: string;
+  transformTranslate3d: string;
+  transformScale: string;
+  transformScaleX: string;
+  transformScaleY: string;
+  transformScaleZ: string;
+  transformScale3d: string;
+};
 
 type Setter = Record<string, ValueofSetter>;
 type ValueofSetter =
@@ -6,17 +73,25 @@ type ValueofSetter =
   | number
   | (string | number | [string, string | number])[];
 
+type Stylex = Record<StylexPropertyName, StylexValueSimple>;
 export class StyleX {
-  #propertyMap = new Map<string, StyleXValue>();
+  #propertyMap = new Map<string, StylexValue>();
   #element: HTMLElement;
-  constructor(element: HTMLElement, initialData?: Setter) {
-    Object.entries(initialData || {}).forEach(([key, value]) => {
-      const stylexValue = creatStylexValue(value);
-      if (stylexValue.length) {
-        this.#propertyMap.set(key, stylexValue);
-        this[key] = stylexValue;
-      }
-    });
+  constructor(element: HTMLElement, initialData?: StylexConstructor) {
+    if (initialData) {
+      Object.entries(initialData).forEach(([key, value]) => {
+        const stylexValue = new StylexValue(
+          this,
+          key as StylexPropertyName,
+          value,
+        );
+        if (stylexValue.length) {
+          this.#propertyMap.set(key, stylexValue);
+          // @ts-ignore
+          this[key] = stylexValue;
+        }
+      });
+    }
 
     const proxy = new Proxy(this, {
       set(target, prop, value) {
@@ -31,7 +106,7 @@ export class StyleX {
         if (prop === Symbol.iterator) {
           return target[Symbol.iterator].bind(target);
         }
-        return Reflect.get(target, prop, receiver);
+        return Reflect.get(target, prop, target);
       },
     });
 
@@ -52,11 +127,31 @@ export class StyleX {
     this.#element = element;
 
     evaluateAandApplyStylex(this, element);
+    setupStateObservers(this, element);
 
     return proxy;
   }
 
-  [Symbol.iterator](): Iterator<[string, StyleXValue]> {
+  get element() {
+    return this.#element;
+  }
+
+  get length() {
+    return this.#propertyMap.size;
+  }
+
+  apply(value: Record<string, string>) {
+    Object.entries(value).forEach(([key, val]) => {
+      applyValidCssPropertyValue(this.element, { name: key, value: val });
+    });
+  }
+
+  getTransition(value: string) {
+    //@ts-ignore
+    return transitionMap(value);
+  }
+
+  [Symbol.iterator](): IterableIterator<[StylexPropertyName, StylexValue]> {
     return this.#propertyMap[Symbol.iterator]();
   }
 }
@@ -67,14 +162,21 @@ function evaluateAandApplyStylex(stylex: StyleX, element: HTMLElement) {
   });
 }
 
+function setupStateObservers(stylex: StyleX, element: HTMLElement) {
+  console.log("observers")
+  for (const [propertyName, stylexValue] of stylex) {
+    console.log("name is", propertyName, "value is", stylexValue);
+  }
+}
+
 function evaluateAndApplyStylexValue(
   propertyName: string,
-  value: StyleXValue,
+  value: StylexValue,
   element: HTMLElement,
 ) {
   const evaluatedValue = evalulateStylexValue(value, element);
   if (evaluatedValue) {
-    applyStylexValue(element, {
+    applyValidCssPropertyValue(element, {
       name: propertyName,
       value: String(evaluatedValue),
     });
@@ -82,312 +184,380 @@ function evaluateAndApplyStylexValue(
 }
 
 function evalulateStylexValue(
-  value: StyleXValue,
+  value: StylexValue,
   element: HTMLElement,
 ): string | number | null {
-  const match = (
-    Array.from(value) as [StringSelector | "default", string | number][]
-  ).find(([stringSelector, val]) => {
-    if (stringSelector === "default") {
-      return true;
-    } else if (isSingleSelectorMatches(selector(stringSelector), element)) {
-      return true;
-    }
-  });
-
-  return match ? match[1] : null;
-}
-
-export function isSingleSelectorMatches(
-  selector: Selector,
-  element: HTMLElement,
-) {
-  if (selector.hierarchySelector) {
-    let hierarchyElement: HTMLElement | undefined;
-    switch (selector.hierarchySelector[0]) {
-      case HierarchySelectorType.Parent:
-        hierarchyElement = element.closest(
-          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
-        ) as HTMLElement | undefined;
-        break;
-      case HierarchySelectorType.Child:
-        hierarchyElement = element.querySelector(
-          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
-        ) as HTMLElement | undefined;
-        break;
-      case HierarchySelectorType.Sibling:
-        hierarchyElement = element.parentElement?.querySelector(
-          `[data-stylex-id="${selector.hierarchySelector[1]}"]`,
-        ) as HTMLElement | undefined;
-        break;
-    }
-    if (hierarchyElement) {
-      element = hierarchyElement;
-    } else {
-      return false;
-    }
-  }
-
-  switch (selector.kind) {
-    case SelectorType.Media:
-      if (window.matchMedia(selector.mediaMatch).matches) {
-        return true;
-      }
-      break;
-    case SelectorType.Pseudo:
-      if (element.matches(selector.pseudoMatch)) {
-        return true;
-      }
-      break;
-    case SelectorType.Attribute:
-      const fullAttrName = `data-stylex-${selector.name}`;
-      if (
-        !selector.value
-          ? element?.hasAttribute(fullAttrName)
-          : element?.getAttribute(fullAttrName) === selector.value
-      ) {
-        return true;
-      }
-      break;
-  }
-  return false;
-}
-
-type StyleXValue = {} & {
-  brand: "StyleXValue";
-  length: number;
-};
-function creatStylexValue(setter: ValueofSetter): StyleXValue {
-  const proxybOject = {};
-  const mapValue = new Map<StringSelector, string | number>();
-  let defaultValue: string | number;
-  let values: [StringSelector, string | number][];
-  if (typeof setter === "string" || typeof setter === "number") {
-    defaultValue = setter;
-  } else {
-    const firstDefaultValue = setter.find(
-      (s) => typeof s === "string" || typeof s === "number",
-    );
-    if (firstDefaultValue) {
-      defaultValue = firstDefaultValue;
-    }
-    const onlyWithValidSelector = setter.filter(
-      (s) => Array.isArray(s) && isStringSelector(s[0]),
-    ) as [StringSelector, string | number][];
-    if (onlyWithValidSelector.length > 0) {
-      values = onlyWithValidSelector;
-    }
-  }
-
-  if (values) {
-    values.forEach(([selector, value]) => {
-      mapValue.set(selector, value);
-    });
-  }
-  if (defaultValue) {
-    mapValue.set("default" as StringSelector, defaultValue);
-  }
-
-  const arrayValue = Array.from(mapValue);
-
-  arrayValue.forEach(([selector, value], idx) => {
-    proxybOject[selector] = value;
-    proxybOject[idx] = [selector, value];
-  });
-
-  Object.defineProperty(proxybOject, "length", {
-    get() {
-      return mapValue.size;
-    },
-    enumerable: false,
-  });
-
-  const handler = {
-    set(obj, prop, value) {
-      throw new Error("Direct mutation is not allowed");
-    },
-  };
-
-  const proxy = new Proxy(proxybOject, handler) as unknown as StyleXValue;
-  return proxy;
-}
-
-type Selector = MediaSelector | AttributeSelector | PseudosSelector;
-
-type MediaSelector = {
-  kind: SelectorType.Media;
-  mediaMatch: string;
-  hierarchySelector?: HierarchySelector;
-};
-
-type AttributeSelector = {
-  kind: SelectorType.Attribute;
-  name: string;
-  value?: string;
-  hierarchySelector?: HierarchySelector;
-};
-
-type PseudosSelector = {
-  kind: SelectorType.Pseudo;
-  pseudoMatch: string;
-  hierarchySelector?: HierarchySelector;
-};
-
-export enum SelectorType {
-  Media,
-  Pseudo,
-  Attribute,
-}
-
-type StringSelector = string & {
-  brand: "StringSelector";
-};
-
-function stringSelector(selector: Selector): StringSelector {
-  let selectorValue: string;
-  if (selector.kind === SelectorType.Media) {
-    selectorValue = `@media ${selector.mediaMatch}`;
-  } else if (selector.kind === SelectorType.Pseudo) {
-    selectorValue = selector.pseudoMatch;
-  } else {
-    if (selector.value) {
-      selectorValue = `@${selector.name}=${selector.value}`;
-    }
-    selectorValue = `@${selector.name}`;
-  }
-
-  if (selector.hierarchySelector) {
-    if (selector.hierarchySelector[0] === HierarchySelectorType.Parent) {
-      selectorValue = `<${selector.hierarchySelector[1]}${selectorValue}`;
-    } else if (selector.hierarchySelector[0] === HierarchySelectorType.Child) {
-      selectorValue = `>${selector.hierarchySelector[1]}${selectorValue}`;
+  for (const [stateSelector, val] of value) {
+    if (stateSelector === "default") {
+      return val;
     } else if (
-      selector.hierarchySelector[0] === HierarchySelectorType.Sibling
+      isCoreStateOrCoreStateWtithHierarchyOrCombinedStateMatches(
+        stateSelectorParsed(stateSelector),
+        element,
+      )
     ) {
-      selectorValue = `~${selector.hierarchySelector[1]}${selectorValue}`;
+      return val;
     }
   }
 
-  return selectorValue as StringSelector;
+  return null;
 }
 
-function selector(value: StringSelector): Selector;
-function selector(value: string): Selector | null;
-function selector(value: StringSelector): Selector {
-  const [valueWithoutHierarchy, hierarchySelector] =
-    splitHierarchySelector(value);
-  if (isStringSelector(valueWithoutHierarchy)) {
-    if (isStringMediaSelector(valueWithoutHierarchy)) {
-      return {
-        kind: SelectorType.Media,
-        mediaMatch: value.replace("@media ", "").replace("@media", ""),
-        ...(hierarchySelector && { hierarchySelector }),
-      };
-    } else if (isStringPseudoSelector(valueWithoutHierarchy)) {
-      return {
-        kind: SelectorType.Pseudo,
-        pseudoMatch: value,
-        ...(hierarchySelector && { hierarchySelector }),
-      };
-    } else if (isStringAttributeSelector(valueWithoutHierarchy)) {
-      const [attrName, attrValue] = splitSelectorTypeAttribute(
-        valueWithoutHierarchy,
-      );
-      return {
-        kind: SelectorType.Attribute,
-        name: attrName,
-        ...(attrValue && { value: attrValue }),
-        ...(hierarchySelector && { hierarchySelector }),
-      };
+type States = "default" | `@${string}` | `:${string}`;
+type StateSelectorwithDefault = StateSelector | "default";
+export class StylexValue {
+  #stateMap = new Map<StateSelectorwithDefault, StylexValueSimple>();
+  #stylex: StyleX;
+  #proeptyName: StylexPropertyName;
+  default?: StylexValueSimple;
+  current?: StylexValueSimple;
+  [key: `@${string}`]: StylexValueSimple | undefined;
+  [key: `:${string}`]: StylexValueSimple | undefined;
+  constructor(
+    stylex: StyleX,
+    propertyName: StylexPropertyName,
+    initialValue?: StylexDefinitionValue,
+  ) {
+    this.#stylex = stylex;
+    this.#proeptyName = propertyName;
+    this.#stateMap = new Map<StateSelectorwithDefault, StylexValueSimple>();
+
+    if (initialValue) {
+      if (
+        typeof initialValue === "string" ||
+        typeof initialValue === "number"
+      ) {
+        this.#stateMap.set("default" as StateSelectorwithDefault, initialValue);
+      } else {
+        let defaultValueSet: true | undefined;
+        initialValue.forEach((value) => {
+          if (typeof value === "string" || typeof value === "number") {
+            if (!defaultValueSet) {
+              this.#stateMap.set("default" as StateSelectorwithDefault, value);
+              defaultValueSet = true;
+            }
+          } else {
+            const [stringSelector, val] = value;
+
+            if (!defaultValueSet && stringSelector === "default") {
+              this.#stateMap.set("default" as StateSelectorwithDefault, val);
+              defaultValueSet = true;
+            } else {
+              if (isStateSelector(stringSelector)) {
+                this.#stateMap.set(stringSelector, val);
+              }
+            }
+          }
+        });
+      }
+
+      if (this.#stateMap.size) {
+        this.#stateMap.entries().forEach(([key, value], idx) => {
+          // @ts-ignore
+          this[key] = value;
+          // @ts-ignore
+          this[idx] = [key, value];
+        });
+      }
     }
-  } else {
-    return null;
+  }
+
+  get length() {
+    return this.#stateMap.size;
+  }
+
+  [Symbol.iterator](): IterableIterator<
+    [StateSelectorwithDefault, StylexValueSimple]
+  > {
+    return this.#stateMap[Symbol.iterator]();
   }
 }
 
-function isStringSelector(value: string): value is StringSelector {
-  const [valueWithoutHierarchy] = splitHierarchySelector(value);
+// function creatStylexValue(
+//   property: StylexPropertyName,
+//   value: StylexDefinitionValue,
+//   stylex: StyleX,
+// ): StyleXValue {
+//   const proxybOject = {};
+//   const mapValue = new Map<StringSelector, string | number>();
+//   let defaultValue: string | number;
+//   let values: [StringSelector, string | number][];
+//   if (typeof setter === "string" || typeof setter === "number") {
+//     defaultValue = setter;
+//   } else {
+//     const firstDefaultValue = setter.find(
+//       (s) => typeof s === "string" || typeof s === "number",
+//     );
+//     if (firstDefaultValue) {
+//       defaultValue = firstDefaultValue;
+//     }
+//     const onlyWithValidSelector = setter.filter(
+//       (s) => Array.isArray(s) && isStringSelector(s[0]),
+//     ) as [StringSelector, string | number][];
+//     if (onlyWithValidSelector.length > 0) {
+//       values = onlyWithValidSelector;
+//     }
+//   }
 
-  return (
-    isStringMediaSelector(valueWithoutHierarchy) ||
-    isStringPseudoSelector(valueWithoutHierarchy) ||
-    isStringAttributeSelector(valueWithoutHierarchy)
-  );
-}
-function isStringMediaSelector(value: StringValueWeithoutHierarchy): boolean {
-  return value.startsWith("@media");
-}
+//   if (values) {
+//     values.forEach(([selector, value]) => {
+//       mapValue.set(selector, value);
+//     });
+//   }
+//   if (defaultValue) {
+//     mapValue.set("default" as StringSelector, defaultValue);
+//   }
 
-function isStringPseudoSelector(value: StringValueWeithoutHierarchy): boolean {
-  return value.startsWith(":");
-}
+//   const arrayValue = Array.from(mapValue);
 
-function isStringAttributeSelector(
-  value: StringValueWeithoutHierarchy,
-): boolean {
-  return value.startsWith("@");
-}
+//   arrayValue.forEach(([selector, value], idx) => {
+//     proxybOject[selector] = value;
+//     proxybOject[idx] = [selector, value];
+//   });
 
-function splitSelectorTypeAttribute(value: string): [string, string?] {
-  const [attrName, attrValue] = value.slice(1).split("=");
-  return [attrName, attrValue as string | undefined];
-}
+//   Object.defineProperty(proxybOject, "length", {
+//     get() {
+//       return mapValue.size;
+//     },
+//     enumerable: false,
+//   });
 
-export enum HierarchySelectorType {
-  Parent,
-  Child,
-  Sibling,
-}
-type StringValueWeithoutHierarchy = string & {
-  brand: "StringValueWeithoutHierarchy";
-};
-type HierarchySelector = [HierarchySelectorType, string];
-function splitHierarchySelector(
-  value: string,
-): [StringValueWeithoutHierarchy, HierarchySelector?] {
-  const regexValidatorHasParentSelector = /^(<[a-z]+(?:-[a-z]+)*).*$/;
-  const regexValidatorHasChildSelector = /^(>[a-z]+(?:-[a-z]+)*).*$/;
-  const regexValidatorHasSiblingSelector = /^(~[a-z]+(?:-[a-z]+)*).*$/;
+//   Object.defineProperty(proxybOject, "current", {
+//     get() {
+//       console.log("key is", key);
 
-  const matchParentSelector = value.match(regexValidatorHasParentSelector);
-  if (matchParentSelector && matchParentSelector[1]) {
-    value = value.replace(matchParentSelector[1], "");
-    return [
-      value as StringValueWeithoutHierarchy,
-      [HierarchySelectorType.Parent, matchParentSelector[1].slice(1)],
-    ];
-  }
+//       return stylex.element.style[key];
+//     },
+//     enumerable: false,
+//     set() {
+//       console.log("key is", key);
+//     },
+//   });
 
-  const matchChildSelector = value.match(regexValidatorHasChildSelector);
-  if (matchChildSelector && matchChildSelector[1]) {
-    value = value.replace(matchChildSelector[1], "");
-    return [
-      value as StringValueWeithoutHierarchy,
-      [HierarchySelectorType.Child, matchChildSelector[1].slice(1)],
-    ];
-  }
+//   const handler = {
+//     set(obj, prop, value) {
+//       throw new Error("Direct mutation is not allowed");
+//     },
+//   };
 
-  const matchSiblingSelector = value.match(regexValidatorHasSiblingSelector);
-  if (matchSiblingSelector && matchSiblingSelector[1]) {
-    value = value.replace(matchSiblingSelector[1], "");
-    return [
-      value as StringValueWeithoutHierarchy,
-      [HierarchySelectorType.Sibling, matchSiblingSelector[1].slice(1)],
-    ];
-  }
+//   const proxy = new Proxy(proxybOject, handler) as unknown as StyleXValue;
+//   return proxy;
+// }
 
-  return [value as StringValueWeithoutHierarchy];
+interface Animation {
+  value: string | number;
+  duration: number;
+  timingFunction?: string;
+  onEnd?: () => void;
 }
 
 interface Property {
   name: string;
-  value: string;
+  value: string | Animation;
 }
 
-function applyStylexValue(element: HTMLElement, property: Property) {
+function applyValidCssPropertyValue(element: HTMLElement, property: Property) {
+  if (isPropertyValueAnimation(property.value)) {
+    const currentTransition = transitionMap(
+      window.getComputedStyle(element).transition,
+    );
+    element.addEventListener(
+      "transitionend",
+      (e: TransitionEvent) => {
+        console.log("Transition ended for property", e.propertyName);
+        // if (e.propertyName === propertyToTransition.name) {
+        //   const listener =
+        //     element.stylex.transitions[propertyToTransition.name];
+        //   if (typeof listener === "function") {
+        //     listener();
+        //   }
+        // }
+      },
+      { once: true },
+    );
+    currentTransition[property.name] = [
+      property.value.duration,
+      property.value.timingFunction,
+    ];
+    element.style.transition =
+      validCssTransitionPropertyValue(currentTransition);
+    console.log(
+      "valid tarnsition: ",
+      validCssTransitionPropertyValue(currentTransition),
+    );
+    property.value = property.value.value;
+  }
+
   element.style.setProperty(kebabCase(property.name), String(property.value));
+}
+
+function isPropertyValueAnimation(
+  value: Property["value"],
+): value is Animation {
+  return typeof value === "object" && "duration" in value && "value" in value;
 }
 
 function removeStyle(element: HTMLElement, propertyName: string) {
   element.style.removeProperty(kebabCase(propertyName));
+}
+
+type ValidCssTransitionPropertyName = string & {
+  brand: "ValidCssTransitionPropertyName";
+};
+
+type ValidCssTimingFunctionName = string & {
+  brand: "ValidCssTimingFunctionName";
+};
+
+type TransitionMap = Record<
+  ValidCssTransitionPropertyName,
+  [number, ValidCssTimingFunctionName?]
+>;
+
+type ValidCssTransitionPropertyValue = string & {
+  brand: "ValidCssTransitionPropertyValue";
+};
+
+function validCssTransitionPropertyValue(
+  map: TransitionMap,
+): ValidCssTransitionPropertyValue {
+  return Object.entries(map)
+    .map(
+      ([tName, [tTime, tFunction]]) =>
+        `${tName} ${tTime}ms${tFunction ? ` ${tFunction}` : ""}`,
+    )
+    .join(", ") as ValidCssTransitionPropertyValue;
+}
+
+function transitionMap(value: ValidCssTransitionPropertyValue): TransitionMap {
+  const result: TransitionMap = {};
+
+  for (const part of splitByComma(value)) {
+    const tokens = splitByWhitespace(part);
+
+    let property: string | undefined;
+    let duration: number | undefined;
+    let timing: string | undefined;
+
+    for (const token of tokens) {
+      const time = parseCssTime(token);
+
+      if (time !== null) {
+        // First time value is duration, second would be delay.
+        if (duration === undefined) {
+          duration = time;
+        }
+        continue;
+      }
+
+      if (isTimingFunction(token)) {
+        timing = token;
+        continue;
+      }
+
+      if (token === "normal" || token === "allow-discrete") {
+        continue;
+      }
+
+      if (!property) {
+        property = token;
+      }
+    }
+
+    if (!property) {
+      property = "all";
+    }
+
+    if (duration === undefined) {
+      duration = 0;
+    }
+
+    if (property === "all") {
+      for (const key of Object.keys(result)) {
+        delete result[key as ValidCssTransitionPropertyName];
+      }
+    }
+
+    result[property as ValidCssTransitionPropertyName] = timing
+      ? [duration, timing as ValidCssTimingFunctionName]
+      : [duration];
+  }
+
+  return result;
+}
+
+function parseCssTime(value: string): number | null {
+  const match = value.trim().match(/^(-?\d*\.?\d+)(ms|s)$/);
+
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+
+  return unit === "s" ? amount * 1000 : amount;
+}
+
+function isTimingFunction(value: string): boolean {
+  return (
+    value === "linear" ||
+    value === "ease" ||
+    value === "ease-in" ||
+    value === "ease-out" ||
+    value === "ease-in-out" ||
+    value.startsWith("cubic-bezier(") ||
+    value.startsWith("steps(") ||
+    value.startsWith("linear(")
+  );
+}
+
+function splitByComma(value: string): string[] {
+  return splitTopLevel(value, ",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function splitByWhitespace(value: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let depth = 0;
+
+  for (const char of value.trim()) {
+    if (char === "(") depth++;
+    if (char === ")") depth--;
+
+    if (/\s/.test(char) && depth === 0) {
+      if (current) {
+        result.push(current);
+        current = "";
+      }
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) result.push(current);
+
+  return result;
+}
+
+function splitTopLevel(value: string, separator: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let depth = 0;
+
+  for (const char of value) {
+    if (char === "(") depth++;
+    if (char === ")") depth--;
+
+    if (char === separator && depth === 0) {
+      result.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current);
+
+  return result;
 }
