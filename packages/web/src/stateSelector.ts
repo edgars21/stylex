@@ -198,7 +198,7 @@ export function coreStateWtithHierarchyParsed(
     regexValidatorHasSiblingSelector,
   ) as [string, string, CoreState];
   return {
-    kind: HierarchySelectorType.Parent,
+    kind: HierarchySelectorType.Sibling,
     id: matchSiblingSelector[1].slice(1),
     state: coreStateParsed(matchSiblingSelector[2]),
   };
