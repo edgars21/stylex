@@ -75,6 +75,10 @@ type PseudoStateParsed = {
   pseudoMatch: string;
 };
 
+export function fastSelectorCheck(value: string): boolean {
+  return !!value.match(/^(@|:|default|<|>|~|&)/);
+}
+
 export enum CoreStateType {
   Media = "Media",
   Pseudo = "Pseudo",

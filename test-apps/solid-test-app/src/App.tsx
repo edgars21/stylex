@@ -1,34 +1,74 @@
-import { Stylex } from "@stylex/web";
+import {
+  Stylex,
+  // solidUseStylex as stylex,
+  stylex,
+  animate,
+  type StylexConstructor,
+} from "@stylex/web";
 import { createSignal } from "solid-js";
+false && stylex;
+
+import "solid-js";
+
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "text-node": JSX.HTMLAttributes<HTMLElement> & { ref?: HTMLElement };
+    }
+    // So `use:stylex` doesn't error:
+    interface Directives {
+      stylex: StylexConstructor;
+    }
+  }
+}
 
 export default function App() {
   let test;
   const [bgSet, setBgSet] = createSignal(false);
   return (
     <div>
-      <div
-        data-stylex-id="test"
-        ref={(el) => {
-          new Stylex(el!, {
-            padding: "20px",
-            backgroundColor: "lightgray",
-            border: [[">child:hover", "2px solid red"], "2px solid blue"],
-          });
-        }}
-      >
+      <div>
         <span
-          data-stylex-id="child"
-          {...{ "data-bg-set": bgSet() ? "" : undefined }}
+        // use:stylex={animate(
+        //   {
+        //     backgroundColor: "green",
+        //     color: [[":hover", "pink"], animate("red", { duration: 1000 })],
+        //   },
+        //   {
+        //     duration: 1000,
+        //   },
+        // )}
+        >
+          one
+        </span>
+        <span
           ref={(el) => {
-            new Stylex(el!, {
-              color: ["red"],
-              backgroundColor: ["blue"],
-              // color: [["<parent-id:hover","blue"],[":active&:hover", "pink"], "red"],
-              // backgroundColor: [[":hover", "pink"],[":active", "red"], "blue"],
-            });
+            stylex(
+              el,
+              animate(
+                {
+                  transformRotateY: [
+                    // animate([":hover", "16deg"], { duration: 1000 }),
+                    // animate(
+                    //   [":hover", animate("18deg", { duration: 1000 })],
+                    //   { duration: 1000 },
+                    // ),
+                    // [":hover", animate("18deg", { duration: 1000 })],
+                    "18deg",
+                    animate("17deg", {
+                      duration: 1000,
+                      timingFunction: "animation on 17deg simple value",
+                    }),
+                  ],
+                  // color: animate("blue", { duration: 1000, timingFunction: "animation on color simple value" }),
+                  // fontSize: "3px",
+                },
+                { duration: 1000, timingFunction: "wraps stylex object" },
+              ),
+            );
           }}
         >
-          Outer
+          two
         </span>
         <button
           onClick={() => {
@@ -37,29 +77,6 @@ export default function App() {
         >
           Toggle bg {bgSet() ? "On" : "Off"}
         </button>
-        <span
-          data-stylex-id="sibling"
-          {...{ "data-bg-set": bgSet() ? "" : undefined }}
-          ref={(el) => {
-            new Stylex(el!, {
-              display: "inline-block",
-              color: ["red"],
-              backgroundColor: ["blue"],
-              transform: [
-                ["~child:hover", { value: "translateX(20px)", duration: 500 }],
-                "translateX(0px)",
-              ],
-              // transform: [
-              //   ["~child:hover", "translateX(20px)"],
-              //   "translateX(0px)",
-              // ],
-              // color: [["<parent-id:hover","blue"],[":active&:hover", "pink"], "red"],
-              // backgroundColor: [[":hover", "pink"],[":active", "red"], "blue"],
-            });
-          }}
-        >
-          Sibling
-        </span>
       </div>
     </div>
   );
