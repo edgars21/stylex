@@ -20,14 +20,6 @@ import {
 } from "./dom";
 import { animate as popmotionAnimate } from "popmotion";
 
-export type CssPropertyNameCamelCaseToValueMap = {
-  [CssKey in keyof CSS.Properties]: CSS.Properties[CssKey];
-};
-
-const tset: CssPropertyNameCamelCaseToValueMap = {
-  alignItems: "works",
-};
-
 // TDDO: implement later
 // export type StylexDefinitionStateful = (
 //   | StylexValueDefinition
@@ -48,54 +40,84 @@ type StylexValueDefinitionStateful = OrWithAnimation<
     | OrWithAnimation<[string, OrWithAnimation<StylexValueSimple>]>
   )[]
 >;
-type ValidCssPropertyNameCamelCase = keyof CssPropertyNameCamelCaseToValueMap;
 
 type ValidCssPropertyNameKebabCase = string & {
   brand: "ValidCssPropertyNameKebabCase";
 };
 
 type StylexPropertyName =
-  | ValidCssPropertyNameCamelCase
-  | AdditionalPropertyName;
+  | StylexPropertyNameAsCssPropertyNameCamelCase
+  | StylexPropertyNameCustom;
 
-type check2 = OrWithAnimation<StylexValueSimple>;
+type StylexPropertyNameAsCssPropertyNameCamelCase =
+  keyof CssPropertyCamelCaseToValueMap;
+type StylexPropertyNameCustom = keyof AdditionalPropertiesTransform;
 
-type check3 = OrWithAnimation<[string, OrWithAnimation<StylexValueSimple>]>;
+export type CssPropertyCamelCaseToValueMap = {
+  [CssKey in keyof CSS.Properties]: CSS.Properties[CssKey];
+};
 
-type check = OrWithAnimation<[string, StylexValueSimple]>;
+type CssStyleName = keyof CssStyleKebabCaseToValueMap;
+type CssPropertyName = keyof CssPropertyKebabCaseToValueMap;
+type CssVariableName = keyof CssVariableKebabCaseToValueMap;
+
+export type CssStyleKebabCaseToValueMap = CssPropertyKebabCaseToValueMap &
+  CssVariableKebabCaseToValueMap;
+export type CssPropertyKebabCaseToValueMap = {
+  [CssKey in keyof CSS.PropertiesHyphen]: CSS.PropertiesHyphen[CssKey][];
+};
+export type CssVariableKebabCaseToValueMap = {
+  [K in ValueOf<typeof additionalPropertiesTransformMap>]: string;
+};
 
 type StylexApplicableValue = StylexValueSimple | Animation<StylexValueSimple>;
 type StylexValueSimple = string | number | null; //ValidCssPropertyValue | AdditionalPropertyValue;
 
-type ValidCssPropertyValue = string & {
-  brand: "ValidCssPropertyValue";
-};
-
 type AdditionalPropertyName = keyof AdditionalPropertiesTransform;
-
-type AdditionalPropertyValue = string & {
-  brand: "AdditionalPropertyValue";
-};
 
 type AdditionalPropertiesTransform = typeof additionalPropertiesTransformMap;
 
 const additionalPropertiesTransformMap = {
-  transformRotate: "--stylex-transform-rotate",
-  transformRotateX: "--stylex-transform-rotate-x",
-  transformRotateY: "--stylex-transform-rotate-y",
-  transformRotateZ: "--stylex-transform-rotate-z",
-  transformRotate3d: "--stylex-transform-rotate-3d",
-  transformTranslate: "--stylex-transform-translate",
-  transformTranslateX: "--stylex-transform-translate-x",
-  transformTranslateY: "--stylex-transform-translate-y",
-  transformTranslateZ: "--stylex-transform-translate-z",
-  transformTranslate3d: "--stylex-transform-translate-3d",
-  transformScale: "--stylex-transform-scale",
-  transformScaleX: "--stylex-transform-scale-x",
-  transformScaleY: "--stylex-transform-scale-y",
-  transformScaleZ: "--stylex-transform-scale-z",
-  transformScale3d: "--stylex-transform-scale-3d",
+  transformRotate: "--transform-rotate",
+  transformRotateX: "--transform-rotate-x",
+  transformRotateY: "--transform-rotate-y",
+  transformRotateZ: "--transform-rotate-z",
+  transformRotate3d: "--transform-rotate-3d",
+  transformTranslate: "--transform-translate",
+  transformTranslateX: "--transform-translate-x",
+  transformTranslateY: "--transform-translate-y",
+  transformTranslateZ: "--transform-translate-z",
+  transformTranslate3d: "--transform-translate-3d",
+  transformScale: "--transform-scale",
+  transformScaleX: "--transform-scale-x",
+  transformScaleY: "--transform-scale-y",
+  transformScaleZ: "--transform-scale-z",
+  transformScale3d: "--transform-scale-3d",
 } as const;
+
+function isCustomPropertyName(
+  value: StylexPropertyName,
+): value is StylexPropertyNameCustom {
+  return value in additionalPropertiesTransformMap;
+}
+
+function cssStyleName(value: StylexPropertyName): CssStyleName {
+  if (isCustomPropertyName(value)) {
+    return cssVariableName(value);
+  } else {
+    return cssPropertyName(value);
+  }
+}
+
+function cssPropertyName(
+  value: StylexPropertyNameAsCssPropertyNameCamelCase,
+): CssPropertyName {
+  return kebabCase(value) as CssPropertyName;
+}
+
+function cssVariableName(value: StylexPropertyNameCustom): CssVariableName {
+  return additionalPropertiesTransformMap[value] as CssVariableName;
+}
 
 type ValueOf<T> = T[keyof T];
 
@@ -420,9 +442,11 @@ export class Stylex {
         (key) => !currentKeys.includes(key),
       );
       for (const key of missingKeys) {
-        removeStyle(element, key);
+        // removeStyle(element, key);
       }
     }
+
+    console.log("Stylex instance created: ", this);
     return proxy;
   }
 
@@ -439,36 +463,35 @@ export class Stylex {
     const valueToCompare = isPropertyValueAnimation(value)
       ? value.value
       : value;
-    if (currentPropertyValue === valueToCompare) {
+    if (
+      currentPropertyValue === valueToCompare ||
+      ((!currentPropertyValue || !valueToCompare) &&
+        !!currentPropertyValue === !!valueToCompare)
+    ) {
       return;
     }
+    console.log(`Applying property ${property} with value: `, value);
 
     if (isPropertyValueAnimation(value)) {
-      if (property in additionalPropertiesTransformMap) {
+      if (isCustomPropertyName(property) || value.poprunner) {
         this.#addAppliedTransform(property as AdditionalPropertyName);
 
         const startParsed = parseLengthOrPercentage(currentPropertyValue);
         // @ts-ignore
         const endParsed = parseLengthOrPercentage(valueToCompare);
-
         if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
           applyCssStyleWithAnimation(this.element, {
             kind: "poprunner",
             duration: value.duration,
-            property: stylexPropertyValueToKebabCase(
-              property,
-            ) as ValidCssPropertyNameKebabCase,
+            cssStyleName: cssStyleName(property),
             start: startParsed[0],
             end: endParsed[0],
             ...(startParsed[1] && {
               unit: startParsed[1],
             }),
+            ...(value.beforeStart && { beforeStart: value.beforeStart }),
+            ...(value.afterEnd && { afterEnd: value.afterEnd }),
             // ...(value.duration && { duration: value.duration }),
-            // ...(value.timingFunction && {
-            //   timingFunction: value.timingFunction,
-            // }),
-            // ...(value.beforeStart && { beforeStart: value.beforeStart }),
-            // ...(value.afterEnd && { afterEnd: value.afterEnd }),
           });
         } else {
           console.warn(
@@ -478,22 +501,13 @@ export class Stylex {
               endParsed,
             },
           );
-          applyValidCssPropertyValue(this.element, {
-            name: stylexPropertyValueToKebabCase(
-              property,
-            ) as ValidCssPropertyNameKebabCase,
-            value: value.value,
-          });
+          applyCssStyle(this.element, cssStyleName(property), value.value);
         }
       } else {
-        applyValidCssPropertyValueWithAnimation(this.element, {
+        applyCssStyleWithAnimation(this.element, {
           kind: "css",
-          property: {
-            name: stylexPropertyValueToKebabCase(
-              property,
-            ) as ValidCssPropertyNameKebabCase,
-            value: value.value,
-          },
+          cssPropertyName: cssPropertyName(property),
+          value: value.value,
           ...(value.duration && { duration: value.duration }),
           ...(value.timingFunction && { timingFunction: value.timingFunction }),
           ...(value.beforeStart && { beforeStart: value.beforeStart }),
@@ -502,16 +516,10 @@ export class Stylex {
       }
     } else {
       if (value === null) {
-        removeCssStyle(this.element, property);
+        removeCssStyle(this.element, cssStyleName(property));
       } else {
+        applyCssStyle(this.element, cssStyleName(property), String(value));
       }
-      applyCssStyle(
-        this.element,
-        stylexPropertyValueToKebabCase(
-          property,
-        ) as ValidCssPropertyNameKebabCase,
-        String(value),
-      );
     }
   }
 
@@ -529,6 +537,8 @@ export class Stylex {
 
   set dirty(value: boolean) {
     this.#dirty = value;
+    // TODO: this probaly should be more efficient instead of evaluateing all values
+    //       we should probably only evalute values that could have changed.
     this.#evaluateAandApplyStylex();
   }
 
@@ -617,7 +627,14 @@ export class Stylex {
       this.#attributeListener = this.#addMutationObserverWithCleanup[0](
         this.element,
         { attributes: true },
-        () => this.#notifyAttributeObservers(),
+        (mutations) => {
+          for (const mutation of mutations) {
+            if (mutation.attributeName === "style") {
+              return;
+            }
+          }
+          this.#notifyAttributeObservers();
+        },
       );
     } else {
       if (this.#attributeListener) {
@@ -915,6 +932,7 @@ export function animate(value: unknown, animation: Omit<Animation, "value">) {
 }
 
 type Animation<T = any> = {
+  poprunner?: boolean;
   value: T;
   duration: number;
   timingFunction?: string;
@@ -922,16 +940,11 @@ type Animation<T = any> = {
   afterEnd?: () => void;
 };
 
-interface CssProperty {
-  name: string;
-  value: string;
-}
-
 type AnimationSpec = AnimationSpecCss | AnimationSpecPoprunner;
 
 type AnimationSpecPoprunner = {
   kind: "poprunner";
-  property: ValidCssPropertyNameKebabCase;
+  cssStyleName: keyof CssStyleKebabCaseToValueMap;
   duration: number;
   start: number;
   end: number;
@@ -943,7 +956,8 @@ type AnimationSpecPoprunner = {
 
 type AnimationSpecCss = {
   kind: "css";
-  property: CssProperty;
+  cssPropertyName: keyof CssPropertyKebabCaseToValueMap;
+  value: string;
   duration?: number;
   timingFunction?: string;
   beforeStart?: () => void;
@@ -955,16 +969,19 @@ function applyCssStyleWithAnimation(
   animation: AnimationSpec,
 ): () => void {
   if (animation.kind === "poprunner") {
+    console.log("do I have before start? ", animation.beforeStart);
     const animateInstance = popmotionAnimate({
       from: animation.start,
       to: animation.end,
       duration: animation.duration,
       onUpdate: (v) => {
+        console.log("poprunner animation onUpdate: ");
         element.style.setProperty(
-          animation.property,
+          animation.cssStyleName,
           `${v.toFixed(2)}${animation.unit ? animation.unit : ""}`,
         );
       },
+      ...(animation.beforeStart && { onPlay: animation.beforeStart }),
       ...(animation.afterEnd && { onComplete: animation.afterEnd }),
       ...(animation.timingFunction && { ease: animation.timingFunction }),
     });
@@ -972,6 +989,8 @@ function applyCssStyleWithAnimation(
       animateInstance.stop();
     };
   } else {
+    console.log("need to implement css transition animation");
+    applyCssStyle(element, animation.cssPropertyName, animation.value);
     // const currentTransition = transitionMap(
     //   // @ts-ignore
     //   window.getComputedStyle(element).transition,
@@ -999,11 +1018,6 @@ function applyCssStyleWithAnimation(
     // // @ts-ignore
     // property.value = property.value.value;
 
-    element.style.setProperty(
-      animation.property.name,
-      animation.property.value,
-    );
-
     return () => {};
   }
 }
@@ -1012,20 +1026,34 @@ function removeCssStyleWithAnimation(
   element: HTMLElement,
   animation: AnimationSpec,
 ) {
-  const originalAftterEnd = animation.afterEnd;
-  const callback = () => {
-    removeCssStyle(element, animation.property);
-    originalAftterEnd && originalAftterEnd();
-  };
-  animation.afterEnd = callback;
-  applyCssStyleWithAnimation(element, animation);
+  console.log("---------> animation remove will run");
+  if (animation.kind === "poprunner") {
+    const originalAftterEnd = animation.afterEnd;
+    const callback = () => {
+      removeCssStyle(element, animation.cssStyleName);
+      originalAftterEnd && originalAftterEnd();
+    };
+    animation.afterEnd = callback;
+    applyCssStyleWithAnimation(element, animation);
+  } else {
+    console.log(
+      "------> need to implement css transition animation for remove",
+    );
+  }
 }
 
-function applyCssStyle(element: HTMLElement, name: string, value: string) {
-  element.style.setProperty(name, String(value));
+function applyCssStyle(
+  element: HTMLElement,
+  name: keyof CssStyleKebabCaseToValueMap,
+  value: string,
+) {
+  element.style.setProperty(name, value);
 }
 
-function removeCssStyle(element: HTMLElement, name: string) {
+function removeCssStyle(
+  element: HTMLElement,
+  name: keyof CssStyleKebabCaseToValueMap,
+) {
   element.style.removeProperty(name);
 }
 

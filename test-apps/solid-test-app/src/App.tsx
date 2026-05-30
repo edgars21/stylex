@@ -23,52 +23,20 @@ declare module "solid-js" {
 }
 
 export default function App() {
-  let test;
   const [bgSet, setBgSet] = createSignal(false);
   return (
     <div>
-      <div>
-        <span
-        // use:stylex={animate(
-        //   {
-        //     backgroundColor: "green",
-        //     color: [[":hover", "pink"], animate("red", { duration: 1000 })],
-        //   },
-        //   {
-        //     duration: 1000,
-        //   },
-        // )}
-        >
-          one
-        </span>
+      <div style={{ position: "relative" }}>
         <span
           ref={(el) => {
-            stylex(
-              el,
-              animate(
-                {
-                  transformRotateY: [
-                    // animate([":hover", "16deg"], { duration: 1000 }),
-                    // animate(
-                    //   [":hover", animate("18deg", { duration: 1000 })],
-                    //   { duration: 1000 },
-                    // ),
-                    // [":hover", animate("18deg", { duration: 1000 })],
-                    "18deg",
-                    animate("17deg", {
-                      duration: 1000,
-                      timingFunction: "animation on 17deg simple value",
-                    }),
-                  ],
-                  // color: animate("blue", { duration: 1000, timingFunction: "animation on color simple value" }),
-                  // fontSize: "3px",
-                },
-                { duration: 1000, timingFunction: "wraps stylex object" },
-              ),
-            );
+            stylex(el, {
+              display: "inline-block",
+
+              backgroundColor: [[":hover", "red"], "blue"],
+            });
           }}
         >
-          two
+          one
         </span>
         <button
           onClick={() => {
@@ -77,6 +45,42 @@ export default function App() {
         >
           Toggle bg {bgSet() ? "On" : "Off"}
         </button>
+        <span
+          {...{
+            "data-bg-set": bgSet() ? "true" : undefined,
+          }}
+          ref={(el) => {
+            stylex(el, {
+              position: "relative",
+              display: "inline-block",
+              border: "1px solid black",
+              left: animate(
+                [
+                  [
+                    "@data-bg-set",
+                    animate("50px", {
+                      duration: 1000,
+                      poprunner: true,
+                      beforeStart: () => {
+                        console.log("will start shortly");
+                      },
+                      afterEnd: () => {
+                        console.log("just ended");
+                      },
+                    }),
+                  ],
+                  "0px",
+                ],
+                {
+                  duration: 300,
+                  poprunner: true,
+                },
+              ),
+            });
+          }}
+        >
+          two
+        </span>
       </div>
     </div>
   );
