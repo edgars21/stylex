@@ -326,6 +326,28 @@ export class Stylex {
   #childDependence: boolean = false;
   #onIstanceAddedUnsubscribe: (() => void) | null = null;
   #appliedTransforms = new Set<keyof AdditionalPropertiesTransform>();
+  #runningAnimations: Set<StylexPropertyName> = new Set();
+
+  #addRunningAnimation(property: StylexPropertyName) {
+    if (!this.#runningAnimations.has(property)) {
+      this.#runningAnimations.add(property);
+    }
+  }
+
+  #removeRunningAnimation(property: StylexPropertyName) {
+    if (this.#runningAnimations.has(property)) {
+      this.#runningAnimations.delete(property);
+    }
+  }
+
+  #recalculateTransitionCssPropertyValue() {
+    this.#element.style.transform = Array.from(this.#appliedTransforms)
+      .map(
+        (val) =>
+          `${lowercaseFirst(val.replace("transform", ""))}(var(${additionalPropertiesTransformMap[val]}))`,
+      )
+      .join(" ");
+  }
 
   #addAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
     if (!this.#appliedTransforms.has(transform)) {
@@ -460,9 +482,7 @@ export class Stylex {
   applyProperty(property: StylexPropertyName, value: StylexApplicableValue) {
     // @ts-ignore
     const currentPropertyValue = this[property]?.current;
-    const valueToCompare = isPropertyValueAnimation(value)
-      ? value.value
-      : value;
+    const valueToCompare = isAnimation(value) ? value.value : value;
     if (
       currentPropertyValue === valueToCompare ||
       ((!currentPropertyValue || !valueToCompare) &&
@@ -472,36 +492,40 @@ export class Stylex {
     }
     console.log(`Applying property ${property} with value: `, value);
 
-    if (isPropertyValueAnimation(value)) {
+    if (isAnimation(value)) {
       if (isCustomPropertyName(property) || value.poprunner) {
         this.#addAppliedTransform(property as AdditionalPropertyName);
 
-        const startParsed = parseLengthOrPercentage(currentPropertyValue);
-        // @ts-ignore
-        const endParsed = parseLengthOrPercentage(valueToCompare);
-        if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
-          applyCssStyleWithAnimation(this.element, {
-            kind: "poprunner",
-            duration: value.duration,
-            cssStyleName: cssStyleName(property),
-            start: startParsed[0],
-            end: endParsed[0],
-            ...(startParsed[1] && {
-              unit: startParsed[1],
-            }),
-            ...(value.beforeStart && { beforeStart: value.beforeStart }),
-            ...(value.afterEnd && { afterEnd: value.afterEnd }),
-            // ...(value.duration && { duration: value.duration }),
-          });
+        if (valueToCompare === null) {
+          console.log("need to animate removal poprunner")
         } else {
-          console.warn(
-            "Requested poprunner animation but start/end values are not valid to proceed: ",
-            {
-              startParsed,
-              endParsed,
-            },
-          );
-          applyCssStyle(this.element, cssStyleName(property), value.value);
+          const startParsed = parseLengthOrPercentage(currentPropertyValue);
+          // @ts-ignore
+          const endParsed = parseLengthOrPercentage(valueToCompare);
+          if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
+            applyCssStyleWithAnimation(this.element, {
+              kind: "poprunner",
+              duration: value.duration,
+              cssStyleName: cssStyleName(property),
+              start: startParsed[0],
+              end: endParsed[0],
+              ...(startParsed[1] && {
+                unit: startParsed[1],
+              }),
+              ...(value.beforeStart && { beforeStart: value.beforeStart }),
+              ...(value.afterEnd && { afterEnd: value.afterEnd }),
+              // ...(value.duration && { duration: value.duration }),
+            });
+          } else {
+            console.warn(
+              "Requested poprunner animation but start/end values are not valid to proceed: ",
+              {
+                startParsed,
+                endParsed,
+              },
+            );
+            applyCssStyle(this.element, cssStyleName(property), value.value);
+          }
         }
       } else {
         applyCssStyleWithAnimation(this.element, {
@@ -991,10 +1015,10 @@ function applyCssStyleWithAnimation(
   } else {
     console.log("need to implement css transition animation");
     applyCssStyle(element, animation.cssPropertyName, animation.value);
-    // const currentTransition = transitionMap(
-    //   // @ts-ignore
-    //   window.getComputedStyle(element).transition,
-    // );
+    const currentTransition = transitionMap(
+      // @ts-ignore
+      window.getComputedStyle(element).transition,
+    );
     // element.addEventListener(
     //   "transitionend",
     //   (e: TransitionEvent) => {

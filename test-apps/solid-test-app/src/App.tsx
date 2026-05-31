@@ -60,7 +60,7 @@ export default function App() {
                     "@data-bg-set",
                     animate("50px", {
                       duration: 1000,
-                      poprunner: true,
+                      // poprunner: true,
                       beforeStart: () => {
                         console.log("will start shortly");
                       },
@@ -73,7 +73,7 @@ export default function App() {
                 ],
                 {
                   duration: 300,
-                  poprunner: true,
+                  // poprunner: true,
                 },
               ),
             });
