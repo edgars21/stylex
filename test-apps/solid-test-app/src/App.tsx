@@ -54,28 +54,12 @@ export default function App() {
               position: "relative",
               display: "inline-block",
               border: "1px solid black",
-              left: animate(
-                [
-                  [
-                    "@data-bg-set",
-                    animate("50px", {
-                      duration: 1000,
-                      // poprunner: true,
-                      beforeStart: () => {
-                        console.log("will start shortly");
-                      },
-                      afterEnd: () => {
-                        console.log("just ended");
-                      },
-                    }),
-                  ],
-                  "0px",
-                ],
-                {
-                  duration: 300,
-                  // poprunner: true,
-                },
-              ),
+              transitionDuration: "413ms, 377ms",
+              left: animate([["@data-bg-set", animate("50px", {duration: 4000})],"0px"], {
+                  duration: 4000,
+              }),
+              transition:
+                "leff 150ms ease-out, height 250ms ease, left 400ms cubic-bezier(0.17, 0.67, 0.83, 0.67) 75ms",
             });
           }}
         >

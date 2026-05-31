@@ -326,27 +326,55 @@ export class Stylex {
   #childDependence: boolean = false;
   #onIstanceAddedUnsubscribe: (() => void) | null = null;
   #appliedTransforms = new Set<keyof AdditionalPropertiesTransform>();
-  #runningAnimations: Set<StylexPropertyName> = new Set();
+  #runningAnimations: Map<StylexPropertyName, CssTransition> = new Map();
+  #computedTransition: string = "";
+  #lastAppliedValues: Map<StylexPropertyName, StylexValueSimple> = new Map();
 
-  #addRunningAnimation(property: StylexPropertyName) {
+  #setComputedTransition(value: string) {
+    if (this.#computedTransition !== value) {
+      this.#computedTransition = value;
+      this.#recalculateTransitionCssPropertyValue();
+    }
+  }
+
+  #addRunningAnimation(
+    property: StylexPropertyName,
+    transition: CssTransition,
+  ) {
     if (!this.#runningAnimations.has(property)) {
-      this.#runningAnimations.add(property);
+      this.#runningAnimations.set(property, transition);
+      this.#recalculateTransitionCssPropertyValue();
     }
   }
 
   #removeRunningAnimation(property: StylexPropertyName) {
     if (this.#runningAnimations.has(property)) {
       this.#runningAnimations.delete(property);
+      this.#recalculateTransitionCssPropertyValue();
     }
   }
 
   #recalculateTransitionCssPropertyValue() {
-    this.#element.style.transform = Array.from(this.#appliedTransforms)
-      .map(
-        (val) =>
-          `${lowercaseFirst(val.replace("transform", ""))}(var(${additionalPropertiesTransformMap[val]}))`,
-      )
-      .join(" ");
+    if (this.#computedTransition || this.#runningAnimations.size) {
+      const transitionList = [];
+      if (this.#computedTransition) {
+        transitionList.push(this.#computedTransition);
+      }
+      if (this.#runningAnimations.size) {
+        // @ts-ignore
+        const transitionMap = (
+          [...this.#runningAnimations.values()] as CssTransition[]
+        ).reduce((acc, transition) => {
+          acc[transition[0]] = transition[1];
+          return acc;
+        }, {} as TransitionMap);
+        const style = validCssTransitionPropertyValue(transitionMap);
+        transitionList.push(style);
+      }
+      applyCssStyle(this.element, "transition", transitionList.join(", "));
+    } else {
+      removeCssStyle(this.element, "transition");
+    }
   }
 
   #addAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
@@ -490,20 +518,48 @@ export class Stylex {
     ) {
       return;
     }
-    console.log(`Applying property ${property} with value: `, value);
+
+    const transitionProperties = [
+      "transition",
+      "transitionProperty",
+      "transitionDuration",
+      "transitionTimingFunction",
+      "transitionDelay",
+    ];
+
+    if (transitionProperties.includes(property)) {
+      const valueMap = {
+        transition: "",
+        transitionProperty: "",
+        transitionDuration: "",
+        transitionTimingFunction: "",
+        transitionDelay: "",
+      };
+
+      // @ts-ignore
+      valueMap[property] = String(valueToCompare);
+
+      // @ts-ignore
+      const computed = transitionMap(valueMap.transition);
+      const setThis = validCssTransitionPropertyValue(computed);
+      this.#setComputedTransition(setThis);
+      return;
+    }
+
+    this.#lastAppliedValues.set(property, valueToCompare);
 
     if (isAnimation(value)) {
       if (isCustomPropertyName(property) || value.poprunner) {
         this.#addAppliedTransform(property as AdditionalPropertyName);
 
         if (valueToCompare === null) {
-          console.log("need to animate removal poprunner")
+          console.log("need to animate removal poprunner");
         } else {
           const startParsed = parseLengthOrPercentage(currentPropertyValue);
           // @ts-ignore
           const endParsed = parseLengthOrPercentage(valueToCompare);
           if (startParsed && endParsed && startParsed[1] === endParsed[1]) {
-            applyCssStyleWithAnimation(this.element, {
+            applyCssStyleWithAnimation(this.element, property, {
               kind: "poprunner",
               duration: value.duration,
               cssStyleName: cssStyleName(property),
@@ -514,7 +570,7 @@ export class Stylex {
               }),
               ...(value.beforeStart && { beforeStart: value.beforeStart }),
               ...(value.afterEnd && { afterEnd: value.afterEnd }),
-              // ...(value.duration && { duration: value.duration }),
+              ...(value.duration && { duration: value.duration }),
             });
           } else {
             console.warn(
@@ -524,19 +580,32 @@ export class Stylex {
                 endParsed,
               },
             );
-            applyCssStyle(this.element, cssStyleName(property), value.value);
+            applyCssStyle(
+              this.element,
+              cssStyleName(property),
+              String(valueToCompare),
+            );
           }
         }
       } else {
-        applyCssStyleWithAnimation(this.element, {
-          kind: "css",
-          cssPropertyName: cssPropertyName(property),
-          value: value.value,
-          ...(value.duration && { duration: value.duration }),
-          ...(value.timingFunction && { timingFunction: value.timingFunction }),
-          ...(value.beforeStart && { beforeStart: value.beforeStart }),
-          ...(value.afterEnd && { afterEnd: value.afterEnd }),
-        });
+        applyCssStyleWithAnimation(
+          this.element,
+          property,
+          {
+            kind: "css",
+            cssPropertyName: cssPropertyName(property),
+            value: String(valueToCompare),
+            ...(value.duration && { duration: value.duration }),
+            ...(value.timingFunction && {
+              timingFunction: value.timingFunction,
+            }),
+            ...(value.beforeStart && { beforeStart: value.beforeStart }),
+            ...(value.afterEnd && { afterEnd: value.afterEnd }),
+          },
+          this.#addListenerWithCleanup[0],
+          this.#addRunningAnimation.bind(this),
+          this.#removeRunningAnimation.bind(this),
+        );
       }
     } else {
       if (value === null) {
@@ -990,16 +1059,34 @@ type AnimationSpecCss = {
 
 function applyCssStyleWithAnimation(
   element: HTMLElement,
+  propertyName: StylexPropertyName,
+  animation: AnimationSpecPoprunner,
+): () => void;
+function applyCssStyleWithAnimation(
+  element: HTMLElement,
+  propertyName: StylexPropertyName,
+  animation: AnimationSpecCss,
+  addEventListenerWithCleanup: ReturnType<
+    typeof createEventListenerWithCleanupFactory
+  >[0],
+  addRunningAnimation: (
+    property: StylexPropertyName,
+    transition: CssTransition,
+  ) => void,
+  removeRunningAnimation: (property: StylexPropertyName) => void,
+): () => void;
+function applyCssStyleWithAnimation(
+  element: HTMLElement,
+  propertyName: StylexPropertyName,
   animation: AnimationSpec,
+  ...args: any[]
 ): () => void {
   if (animation.kind === "poprunner") {
-    console.log("do I have before start? ", animation.beforeStart);
     const animateInstance = popmotionAnimate({
       from: animation.start,
       to: animation.end,
       duration: animation.duration,
       onUpdate: (v) => {
-        console.log("poprunner animation onUpdate: ");
         element.style.setProperty(
           animation.cssStyleName,
           `${v.toFixed(2)}${animation.unit ? animation.unit : ""}`,
@@ -1013,44 +1100,54 @@ function applyCssStyleWithAnimation(
       animateInstance.stop();
     };
   } else {
-    console.log("need to implement css transition animation");
-    applyCssStyle(element, animation.cssPropertyName, animation.value);
-    const currentTransition = transitionMap(
-      // @ts-ignore
-      window.getComputedStyle(element).transition,
+    console.log(
+      "-------> applying css style with animation: ",
+      animation.cssPropertyName,
     );
-    // element.addEventListener(
-    //   "transitionend",
-    //   (e: TransitionEvent) => {
-    //     // if (e.propertyName === propertyToTransition.name) {
-    //     //   const listener =
-    //     //     element.stylex.transitions[propertyToTransition.name];
-    //     //   if (typeof listener === "function") {
-    //     //     listener();
-    //     //   }
-    //     // }
-    //   },
-    //   { once: true },
-    // );
-    // // @ts-ignore
-    // currentTransition[property.name] = [
-    //   property.value.duration,
-    //   property.value.timingFunction,
-    // ];
-    // element.style.transition =
-    //   validCssTransitionPropertyValue(currentTransition);
-    // // @ts-ignore
-    // property.value = property.value.value;
+    let cleanUpFunction: () => void;
+    const addEventListenerWithCleanup = args[0] as ReturnType<
+      typeof createEventListenerWithCleanupFactory
+    >[0];
+    const addRunningAnimation = args[1] as (
+      property: StylexPropertyName,
+      transition: CssTransition,
+    ) => void;
+    const removeRunningAnimation = args[2] as (property: StylexPropertyName) => void;
+    const cleanUpTransitionEnd = addEventListenerWithCleanup(
+      element,
+      "transitionend",
+      // @ts-ignore
+      (e: TransitionEvent) => {
+        if (e.propertyName === animation.cssPropertyName) {
+          cleanUpFunction();
+        }
+      },
+    );
+    cleanUpFunction = () => {
+      cleanUpTransitionEnd();
+      removeRunningAnimation(propertyName);
+      console.log(
+        "<--------- will cleanup after transition end: ",
+        animation.cssPropertyName,
+      );
+    };
 
-    return () => {};
+    addRunningAnimation(propertyName, [
+      // @ts-ignore
+      animation.cssPropertyName,
+      // @ts-ignore
+      [animation.duration, animation.timingFunction],
+    ]);
+    applyCssStyle(element, animation.cssPropertyName, animation.value);
+    return cleanUpFunction;
   }
 }
 
 function removeCssStyleWithAnimation(
   element: HTMLElement,
+  propertyName: StylexPropertyName,
   animation: AnimationSpec,
 ) {
-  console.log("---------> animation remove will run");
   if (animation.kind === "poprunner") {
     const originalAftterEnd = animation.afterEnd;
     const callback = () => {
@@ -1058,7 +1155,7 @@ function removeCssStyleWithAnimation(
       originalAftterEnd && originalAftterEnd();
     };
     animation.afterEnd = callback;
-    applyCssStyleWithAnimation(element, animation);
+    applyCssStyleWithAnimation(element, propertyName, animation);
   } else {
     console.log(
       "------> need to implement css transition animation for remove",
@@ -1100,10 +1197,12 @@ type ValidCssTimingFunctionName = string & {
   brand: "ValidCssTimingFunctionName";
 };
 
-type TransitionMap = Record<
+type TransitionMap = Record<CssTransition[0], CssTransition[1]>;
+
+type CssTransition = [
   ValidCssTransitionPropertyName,
-  [number, ValidCssTimingFunctionName?]
->;
+  [number, ValidCssTimingFunctionName?],
+];
 
 type ValidCssTransitionPropertyValue = string & {
   brand: "ValidCssTransitionPropertyValue";
