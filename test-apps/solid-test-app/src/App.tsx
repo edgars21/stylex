@@ -55,7 +55,7 @@ export default function App() {
               display: "inline-block",
               border: "1px solid black",
               transitionDuration: "413ms, 377ms",
-              left: animate([["@data-bg-set", animate("50px", {duration: 4000})],"0px"], {
+              left: animate([["@data-bg-set", animate("50px", {duration: 4000})],"100px"], {
                   duration: 4000,
               }),
               transition:

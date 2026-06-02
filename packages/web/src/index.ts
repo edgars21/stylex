@@ -312,21 +312,21 @@ export class Stylex {
 
   #propertyMap = new Map<string, StylexValue>();
   #element: HTMLElement;
-  #dirty: boolean = false;
   #addListenerWithCleanup = createEventListenerWithCleanupFactory();
   #addMutationObserverWithCleanup = createMutationObserverWithCleanupFactory();
-  #hoverObservers: Set<Stylex> = new Set();
+  #hoverObservers: Set<StylexValue> = new Set();
   #hoverListeners: [() => void, () => void] | null = null;
-  #activeObservers: Set<Stylex> = new Set();
+  #activeObservers: Set<StylexValue> = new Set();
   #activeListeners: [() => void, () => void] | null = null;
-  #attributeObservers: Set<Stylex> = new Set();
+  #attributeObservers: Set<StylexValue> = new Set();
   #attributeListener: (() => void) | null = null;
   #parentDependence: boolean = false;
   #siblingDependence: boolean = false;
   #childDependence: boolean = false;
   #onIstanceAddedUnsubscribe: (() => void) | null = null;
   #appliedTransforms = new Set<keyof AdditionalPropertiesTransform>();
-  #runningAnimations: Map<StylexPropertyName, CssTransition> = new Map();
+  #runningAnimations: Map<StylexPropertyName, [CssTransition, () => void]> =
+    new Map();
   #computedTransition: string = "";
   #lastAppliedValues: Map<StylexPropertyName, StylexValueSimple> = new Map();
 
@@ -340,9 +340,10 @@ export class Stylex {
   #addRunningAnimation(
     property: StylexPropertyName,
     transition: CssTransition,
+    cleanupFunction: () => void,
   ) {
     if (!this.#runningAnimations.has(property)) {
-      this.#runningAnimations.set(property, transition);
+      this.#runningAnimations.set(property, [transition, cleanupFunction]);
       this.#recalculateTransitionCssPropertyValue();
     }
   }
@@ -363,8 +364,8 @@ export class Stylex {
       if (this.#runningAnimations.size) {
         // @ts-ignore
         const transitionMap = (
-          [...this.#runningAnimations.values()] as CssTransition[]
-        ).reduce((acc, transition) => {
+          [...this.#runningAnimations.values()] as [CssTransition, () => void][]
+        ).reduce((acc, [transition]) => {
           acc[transition[0]] = transition[1];
           return acc;
         }, {} as TransitionMap);
@@ -400,24 +401,6 @@ export class Stylex {
       .join(" ");
   }
 
-  #notifyHoverObservers() {
-    for (const observer of this.#hoverObservers) {
-      observer.dirty = true;
-    }
-  }
-
-  #notifyActiveObservers() {
-    for (const observer of this.#activeObservers) {
-      observer.dirty = true;
-    }
-  }
-
-  #notifyAttributeObservers() {
-    for (const observer of this.#attributeObservers) {
-      observer.dirty = true;
-    }
-  }
-
   constructor(
     element: HTMLElement,
     definition?: OrWithAnimation<StylexDefinition>,
@@ -432,27 +415,29 @@ export class Stylex {
         ? [definition.value, { ...definition, value: undefined }]
         : [definition, false];
       Object.entries(definitionValue).forEach(([key, value]) => {
-        const stylexValue = new StylexValue(
-          this,
-          key as StylexPropertyName,
-          isAnimation(value)
-            ? value
-            : hasAnimation
-              ? animate(value, hasAnimation)
-              : value,
-        );
-        if (stylexValue.length) {
-          this.#propertyMap.set(key, stylexValue);
-          // @ts-ignore
-          this[key] = stylexValue;
-        }
+        value = isAnimation(value)
+          ? value
+          : hasAnimation
+            ? animate(value, hasAnimation)
+            : value;
+        // @ts-ignore
+        this.#addProperty(key as StylexPropertyName, value, true);
       });
     }
 
     const proxy = new Proxy(this, {
+      deleteProperty(target, prop) {
+        target.#removeProperty(prop as StylexPropertyName);
+        return false;
+      },
       set(target, prop, value) {
-        if (typeof value === "undefined") {
-          throw new Error(`Cannot set ${String(prop)} to undefined`);
+        if (typeof value === "undefined" || value === null) {
+          target.#removeProperty(prop as StylexPropertyName);
+          return false;
+        } else {
+          target.#removeProperty(prop as StylexPropertyName);
+          // @ts-ignore
+          target.#addProperty(prop as StylexPropertyName, value);
         }
         // @ts-ignore
         target[prop] = value;
@@ -472,10 +457,8 @@ export class Stylex {
       },
     });
 
-    this.#evaluateAandApplyStylex();
-
     setTimeout(() => {
-      this.#evaluateForObservationStylex();
+      this.#evaluateForObservation();
     }, 0);
 
     // @ts-ignore
@@ -500,14 +483,58 @@ export class Stylex {
     return proxy;
   }
 
-  apply(value: Record<StylexPropertyName, StylexApplicableValue>) {
+  #removeProperty(name: StylexPropertyName) {
+    // @ts-ignore
+    const stylexValue = this[name];
+    if (stylexValue) {
+      stylexValue.onDestroy();
+    }
+    this.#propertyMap.delete(name);
+    // @ts-ignore
+    delete this[name];
+    removeCssStyle(this.element, cssStyleName(name));
+  }
+
+  #addProperty(
+    name: StylexPropertyName,
+    value: ValueOf<StylexDefinition>,
+    initial?: boolean,
+  ) {
+    const stylexValue = new StylexValue(this, name, value);
+    if (stylexValue.length) {
+      this.#propertyMap.set(name, stylexValue);
+      // @ts-ignore
+      this[name] = stylexValue;
+      this.#evaluateAndApplyProperty(name, stylexValue, this.element, initial);
+      if (!initial) {
+        this.#evaluateForObservationProperty(stylexValue, [
+          false,
+          false,
+          false,
+        ]);
+      }
+    }
+  }
+
+  apply(
+    value: Record<StylexPropertyName, StylexApplicableValue>,
+    settings?: { ignoreAnimation: boolean },
+  ) {
     Object.entries(value).forEach(([key, val]) => {
       // @ts-ignore
-      this.applyProperty(key, value);
+      this.applyProperty(key, value, settings);
     });
   }
 
-  applyProperty(property: StylexPropertyName, value: StylexApplicableValue) {
+  applyProperty(
+    property: StylexPropertyName,
+    value: StylexApplicableValue,
+    settings?: { ignoreAnimation: boolean },
+  ) {
+    if (settings?.ignoreAnimation && isAnimation(value)) {
+      value = value.value;
+    }
+
     // @ts-ignore
     const currentPropertyValue = this[property]?.current;
     const valueToCompare = isAnimation(value) ? value.value : value;
@@ -526,6 +553,11 @@ export class Stylex {
       "transitionTimingFunction",
       "transitionDelay",
     ];
+
+    const runningAnimation = this.#runningAnimations.get(property);
+    if (runningAnimation) {
+      runningAnimation[1]();
+    }
 
     if (transitionProperties.includes(property)) {
       const valueMap = {
@@ -624,25 +656,18 @@ export class Stylex {
     return this.#propertyMap.size;
   }
 
-  get dirty() {
-    return this.#dirty;
-  }
-
-  set dirty(value: boolean) {
-    this.#dirty = value;
-    // TODO: this probaly should be more efficient instead of evaluateing all values
-    //       we should probably only evalute values that could have changed.
-    this.#evaluateAandApplyStylex();
-  }
-
-  addHoverObserver(observer: Stylex) {
+  addHoverObserver(observer: StylexValue) {
     this.#hoverObservers.add(observer);
-    this.#addRemoveHoverListeners();
+    if (!this.#hoverListeners) {
+      this.#addRemoveHoverListeners();
+    }
   }
 
-  removeHoverObserver(observer: Stylex) {
+  removeHoverObserver(observer: StylexValue) {
     this.#hoverObservers.delete(observer);
-    this.#addRemoveHoverListeners();
+    if (this.#hoverListeners) {
+      this.#addRemoveHoverListeners();
+    }
   }
 
   #addRemoveHoverListeners() {
@@ -651,13 +676,21 @@ export class Stylex {
         this.#addListenerWithCleanup[0](
           this.element,
           "mouseenter",
-          () => this.#notifyHoverObservers(),
+          () => {
+            for (const observer of this.#hoverObservers) {
+              observer.evaluteAndApply();
+            }
+          },
           { passive: true },
         ),
         this.#addListenerWithCleanup[0](
           this.element,
           "mouseleave",
-          () => this.#notifyHoverObservers(),
+          () => {
+            for (const observer of this.#hoverObservers) {
+              observer.evaluteAndApply();
+            }
+          },
           { passive: true },
         ),
       ];
@@ -670,14 +703,18 @@ export class Stylex {
     }
   }
 
-  addActiveObserver(observer: Stylex) {
+  addActiveObserver(observer: StylexValue) {
     this.#activeObservers.add(observer);
-    this.#addRemoveActiveListeners();
+    if (!this.#activeListeners) {
+      this.#addRemoveActiveListeners();
+    }
   }
 
-  removeActiveObserver(observer: Stylex) {
+  removeActiveObserver(observer: StylexValue) {
     this.#activeObservers.delete(observer);
-    this.#addRemoveActiveListeners();
+    if (this.#activeListeners) {
+      this.#addRemoveActiveListeners();
+    }
   }
 
   #addRemoveActiveListeners() {
@@ -686,13 +723,21 @@ export class Stylex {
         this.#addListenerWithCleanup[0](
           this.element,
           "pointerdown",
-          () => this.#notifyActiveObservers(),
+          () => {
+            for (const observer of this.#activeObservers) {
+              observer.evaluteAndApply();
+            }
+          },
           { passive: true },
         ),
         this.#addListenerWithCleanup[0](
           this.element,
           "pointerup",
-          () => this.#notifyActiveObservers(),
+          () => {
+            for (const observer of this.#activeObservers) {
+              observer.evaluteAndApply();
+            }
+          },
           { passive: true },
         ),
       ];
@@ -705,17 +750,21 @@ export class Stylex {
     }
   }
 
-  addAttributeObserver(observer: Stylex) {
+  addAttributeObserver(observer: StylexValue) {
     this.#attributeObservers.add(observer);
-    this.#addRemoveAttributeListeners();
+    if (!this.#attributeListener) {
+      this.#addRemoveAttributeListener();
+    }
   }
 
-  removeAttributeObserver(observer: Stylex) {
+  removeAttributeObserver(observer: StylexValue) {
     this.#attributeObservers.delete(observer);
-    this.#addRemoveAttributeListeners();
+    if (this.#attributeListener) {
+      this.#addRemoveAttributeListener();
+    }
   }
 
-  #addRemoveAttributeListeners() {
+  #addRemoveAttributeListener() {
     if (this.#attributeObservers.size) {
       this.#attributeListener = this.#addMutationObserverWithCleanup[0](
         this.element,
@@ -726,7 +775,9 @@ export class Stylex {
               return;
             }
           }
-          this.#notifyAttributeObservers();
+          for (const observer of this.#attributeObservers) {
+            observer.evaluteAndApply();
+          }
         },
       );
     } else {
@@ -746,32 +797,42 @@ export class Stylex {
     // @ts-ignore
     return this.#propertyMap[Symbol.iterator]();
   }
-  #evaluateAandApplyStylex() {
-    Array.from(this).forEach(([propertyName, stylexValue]) => {
-      this.#evaluateAndApplyStylexValue(
+
+  evaluateAndApply(
+    values: [StylexPropertyName, StylexValue][] = Array.from(this),
+    initial?: boolean,
+  ) {
+    values.forEach(([propertyName, stylexValue]) => {
+      this.#evaluateAndApplyProperty(
         propertyName,
         stylexValue,
         this.element,
+        initial,
       );
     });
   }
 
-  #evaluateAndApplyStylexValue(
-    propertyName: string,
+  #evaluateAndApplyProperty(
+    propertyName: StylexPropertyName,
     value: StylexValue,
     element: HTMLElement,
+    initial?: boolean,
   ) {
     const evaluatedValue = evalulateStylexValue(value, element);
     if (evaluatedValue) {
       // @ts-ignore
-      this.applyProperty(propertyName, evaluatedValue);
+      this.applyProperty(
+        propertyName,
+        evaluatedValue,
+        ...(initial ? [{ ignoreAnimation: true }] : []),
+      );
     }
   }
 
-  #evaluateForObservationStylex() {
+  #evaluateForObservation() {
     let dependence: [boolean, boolean, boolean] = [false, false, false];
     Array.from(this).forEach(([_, stylexValue]) => {
-      this.#evaluateForObservationStylexValue(stylexValue, dependence);
+      this.#evaluateForObservationProperty(stylexValue, dependence);
     });
     this.#parentDependence = dependence[0];
     this.#siblingDependence = dependence[1];
@@ -784,7 +845,7 @@ export class Stylex {
     ) {
       if (!this.#onIstanceAddedUnsubscribe) {
         this.#onIstanceAddedUnsubscribe = Stylex.#onInstanceAdded(() => {
-          this.#evaluateForObservationStylex();
+          this.#evaluateForObservation();
         });
       }
     } else {
@@ -795,7 +856,7 @@ export class Stylex {
     }
   }
 
-  #evaluateForObservationStylexValue(
+  #evaluateForObservationProperty(
     value: StylexValue,
     dependence: [boolean, boolean, boolean],
   ) {
@@ -864,12 +925,12 @@ export class Stylex {
         const parsedState = coreStateParsed(state);
         if (parsedState.kind === CoreStateType.Pseudo) {
           if (parsedState.pseudoMatch === ":hover") {
-            hierarchyStylex.addHoverObserver(this);
+            hierarchyStylex.addHoverObserver(value);
           } else if (parsedState.pseudoMatch === ":active") {
-            hierarchyStylex.addActiveObserver(this);
+            hierarchyStylex.addActiveObserver(value);
           }
         } else if (parsedState.kind === CoreStateType.Attribute) {
-          hierarchyStylex.addAttributeObserver(this);
+          hierarchyStylex.addAttributeObserver(value);
         }
       });
     });
@@ -992,6 +1053,16 @@ export class StylexValue {
     return this.#stateMap.size;
   }
 
+  evaluteAndApply() {
+    this.#stylex.evaluateAndApply([[this.#propertyName, this]]);
+  }
+
+  onDestroy() {
+    this.#stylex.removeHoverObserver(this);
+    this.#stylex.removeActiveObserver(this);
+    this.#stylex.removeAttributeObserver(this);
+  }
+
   [Symbol.iterator](): IterableIterator<
     [StateSelectorwithDefault, StylexValueSimple]
   > {
@@ -1061,7 +1132,7 @@ function applyCssStyleWithAnimation(
   element: HTMLElement,
   propertyName: StylexPropertyName,
   animation: AnimationSpecPoprunner,
-): () => void;
+): void;
 function applyCssStyleWithAnimation(
   element: HTMLElement,
   propertyName: StylexPropertyName,
@@ -1072,15 +1143,16 @@ function applyCssStyleWithAnimation(
   addRunningAnimation: (
     property: StylexPropertyName,
     transition: CssTransition,
+    callback: () => void,
   ) => void,
   removeRunningAnimation: (property: StylexPropertyName) => void,
-): () => void;
+): void;
 function applyCssStyleWithAnimation(
   element: HTMLElement,
   propertyName: StylexPropertyName,
   animation: AnimationSpec,
   ...args: any[]
-): () => void {
+): void {
   if (animation.kind === "poprunner") {
     const animateInstance = popmotionAnimate({
       from: animation.start,
@@ -1096,14 +1168,10 @@ function applyCssStyleWithAnimation(
       ...(animation.afterEnd && { onComplete: animation.afterEnd }),
       ...(animation.timingFunction && { ease: animation.timingFunction }),
     });
-    return () => {
-      animateInstance.stop();
-    };
+    // return () => {
+    //   animateInstance.stop();
+    // };
   } else {
-    console.log(
-      "-------> applying css style with animation: ",
-      animation.cssPropertyName,
-    );
     let cleanUpFunction: () => void;
     const addEventListenerWithCleanup = args[0] as ReturnType<
       typeof createEventListenerWithCleanupFactory
@@ -1111,8 +1179,11 @@ function applyCssStyleWithAnimation(
     const addRunningAnimation = args[1] as (
       property: StylexPropertyName,
       transition: CssTransition,
+      cleanupCallback: () => void,
     ) => void;
-    const removeRunningAnimation = args[2] as (property: StylexPropertyName) => void;
+    const removeRunningAnimation = args[2] as (
+      property: StylexPropertyName,
+    ) => void;
     const cleanUpTransitionEnd = addEventListenerWithCleanup(
       element,
       "transitionend",
@@ -1126,20 +1197,19 @@ function applyCssStyleWithAnimation(
     cleanUpFunction = () => {
       cleanUpTransitionEnd();
       removeRunningAnimation(propertyName);
-      console.log(
-        "<--------- will cleanup after transition end: ",
-        animation.cssPropertyName,
-      );
     };
 
-    addRunningAnimation(propertyName, [
-      // @ts-ignore
-      animation.cssPropertyName,
-      // @ts-ignore
-      [animation.duration, animation.timingFunction],
-    ]);
+    addRunningAnimation(
+      propertyName,
+      [
+        // @ts-ignore
+        animation.cssPropertyName,
+        // @ts-ignore
+        [animation.duration, animation.timingFunction],
+      ],
+      cleanUpFunction,
+    );
     applyCssStyle(element, animation.cssPropertyName, animation.value);
-    return cleanUpFunction;
   }
 }
 
