@@ -17,6 +17,7 @@ import {
 import {
   createEventListenerWithCleanupFactory,
   createMutationObserverWithCleanupFactory,
+  ElementDestructionObserver,
 } from "./dom";
 import { animate as popmotionAnimate } from "popmotion";
 
@@ -292,11 +293,20 @@ export type StylexConstructor = {
       )[];
 };
 
+const observer = new ElementDestructionObserver((el) => {
+  // @ts-ignore
+  const stylex = el.stylex as Stylex | undefined;
+  if (stylex) {
+    stylex.onDestroy();
+  }
+});
+
 // type Stylex = Record<StylexPropertyName, StylexValueSimple>;
 export class Stylex {
   static #instances = new Set<Stylex>();
   static #onInstanceAddedSubscribers = new Set<() => void>();
   static #addInstance(instance: Stylex) {
+    observer.observe(instance.#element);
     Stylex.#instances.add(instance);
     Stylex.#onInstanceAddedSubscribers.forEach((subscriber) => subscriber());
   }
@@ -948,6 +958,10 @@ export class Stylex {
   onDestroy() {
     this.#addListenerWithCleanup[1]();
     this.#addMutationObserverWithCleanup[1]();
+    for (const [_, stylexValue] of this) {
+      stylexValue.onDestroy();
+    }
+    observer.unobserve(this.#element);
   }
 }
 
