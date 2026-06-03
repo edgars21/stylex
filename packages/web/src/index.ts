@@ -407,7 +407,15 @@ export class Stylex {
   ) {
     this.#element = element;
 
+    // @ts-ignore
+    const previousStylex = element.stylex as Stylex | undefined;
+    let previousProperties: Set<StylexPropertyName>;
     if (definition) {
+      if (previousStylex) {
+        previousProperties = new Set(
+          Array.from(previousStylex).map(([key]) => key),
+        );
+      }
       const [definitionValue, hasAnimation]: [
         StylexDefinition,
         Animation | false,
@@ -421,26 +429,41 @@ export class Stylex {
             ? animate(value, hasAnimation)
             : value;
         // @ts-ignore
-        this.#addProperty(key as StylexPropertyName, value, true);
+        if (previousStylex) {
+          // @ts-ignore
+          previousStylex[key as StylexPropertyName] = value;
+          previousProperties.delete(key as StylexPropertyName);
+        } else {
+          // @ts-ignore
+          this.#addProperty(key as StylexPropertyName, value, true);
+        }
       });
+    }
+
+    if (previousStylex) {
+      // @ts-ignore
+      if (previousProperties && previousProperties.size) {
+        for (const key of previousProperties) {
+          // @ts-ignore
+          delete previousStylex[key as StylexPropertyName];
+        }
+      }
+      return previousStylex;
     }
 
     const proxy = new Proxy(this, {
       deleteProperty(target, prop) {
         target.#removeProperty(prop as StylexPropertyName);
-        return false;
+        return true;
       },
       set(target, prop, value) {
         if (typeof value === "undefined" || value === null) {
           target.#removeProperty(prop as StylexPropertyName);
-          return false;
         } else {
           target.#removeProperty(prop as StylexPropertyName);
           // @ts-ignore
           target.#addProperty(prop as StylexPropertyName, value);
         }
-        // @ts-ignore
-        target[prop] = value;
         return true;
       },
       get(target, prop, receiver) {
@@ -466,20 +489,6 @@ export class Stylex {
 
     Stylex.#addInstance(this);
 
-    // @ts-ignore
-    const previousStyleX = element.stylex as Stylex | undefined;
-    if (previousStyleX) {
-      const previousKeys = Array.from(previousStyleX).map(([key]) => key);
-      const currentKeys = Array.from(this).map(([key]) => key);
-      const missingKeys = previousKeys.filter(
-        (key) => !currentKeys.includes(key),
-      );
-      for (const key of missingKeys) {
-        // removeStyle(element, key);
-      }
-    }
-
-    console.log("Stylex instance created: ", this);
     return proxy;
   }
 
