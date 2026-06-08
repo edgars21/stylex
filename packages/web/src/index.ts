@@ -330,6 +330,10 @@ export class Stylex {
   #activeListeners: [() => void, () => void] | null = null;
   #attributeObservers: Set<StylexValue> = new Set();
   #attributeListener: (() => void) | null = null;
+  #focusObservers: Set<StylexValue> = new Set();
+  #focusListeners: [() => void, () => void] | null = null;
+  #focusWithinObservers: Set<StylexValue> = new Set();
+  #focusWithinListeners: [() => void, () => void] | null = null;
   #parentDependence: boolean = false;
   #siblingDependence: boolean = false;
   #childDependence: boolean = false;
@@ -722,6 +726,100 @@ export class Stylex {
     }
   }
 
+  addFocusObserver(observer: StylexValue) {
+    this.#focusObservers.add(observer);
+    if (!this.#focusListeners) {
+      this.#addRemoveFocusListeners();
+    }
+  }
+
+  removeFocusObserver(observer: StylexValue) {
+    this.#focusObservers.delete(observer);
+    if (this.#focusListeners) {
+      this.#addRemoveFocusListeners();
+    }
+  }
+
+  #addRemoveFocusListeners() {
+    if (this.#focusObservers.size) {
+      this.#focusListeners = [
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "focus",
+          () => {
+            for (const observer of this.#focusObservers) {
+              observer.evaluteAndApply();
+            }
+          },
+          { passive: true },
+        ),
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "blur",
+          () => {
+            for (const observer of this.#focusObservers) {
+              observer.evaluteAndApply();
+            }
+          },
+          { passive: true },
+        ),
+      ];
+    } else {
+      if (this.#focusListeners) {
+        this.#focusListeners[0]();
+        this.#focusListeners[1]();
+        this.#focusListeners = null;
+      }
+    }
+  }
+
+  addFocusWithinObserver(observer: StylexValue) {
+    this.#focusWithinObservers.add(observer);
+    if (!this.#focusWithinListeners) {
+      this.#addRemoveFocusWithinListeners();
+    }
+  }
+
+  removeFocusWithinObserver(observer: StylexValue) {
+    this.#focusWithinObservers.delete(observer);
+    if (this.#focusWithinListeners) {
+      this.#addRemoveFocusWithinListeners();
+    }
+  }
+
+  #addRemoveFocusWithinListeners() {
+    if (this.#focusWithinObservers.size) {
+      this.#focusWithinListeners = [
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "focusin",
+          () => {
+            for (const observer of this.#focusWithinObservers) {
+              observer.evaluteAndApply();
+            }
+          },
+          { passive: true },
+        ),
+        this.#addListenerWithCleanup[0](
+          this.element,
+          "focusout",
+          () => {
+            for (const observer of this.#focusWithinObservers) {
+              observer.evaluteAndApply();
+            }
+          },
+          { passive: true },
+        ),
+      ];
+    } else {
+      if (this.#focusWithinListeners) {
+        this.#focusWithinListeners[0]();
+        this.#focusWithinListeners[1]();
+        this.#focusWithinListeners = null;
+      }
+    }
+  }
+
   addActiveObserver(observer: StylexValue) {
     this.#activeObservers.add(observer);
     if (!this.#activeListeners) {
@@ -945,8 +1043,13 @@ export class Stylex {
         if (parsedState.kind === CoreStateType.Pseudo) {
           if (parsedState.pseudoMatch === ":hover") {
             hierarchyStylex.addHoverObserver(value);
+            // TODO: left add observer for focus and focus within
           } else if (parsedState.pseudoMatch === ":active") {
             hierarchyStylex.addActiveObserver(value);
+          } else if (parsedState.pseudoMatch === ":focus") {
+            hierarchyStylex.addFocusObserver(value);
+          } else if (parsedState.pseudoMatch === ":focus-within") {
+            hierarchyStylex.addFocusWithinObserver(value);
           }
         } else if (parsedState.kind === CoreStateType.Attribute) {
           hierarchyStylex.addAttributeObserver(value);
