@@ -1,10 +1,13 @@
-import { StylexDefinition, Stylex, animate } from "@stylex/web";
+import {
+  StylexDefinition,
+  Stylex,
+  animate,
+  mergeStylexDefinitions,
+} from "@stylex/web";
 import { createEffect, onCleanup } from "solid-js";
 
 export type { StylexDefinition };
-export {
-  animate,
-}
+export { animate, mergeStylexDefinitions };
 
 declare module "solid-js" {
   namespace JSX {

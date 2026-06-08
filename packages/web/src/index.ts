@@ -344,77 +344,6 @@ export class Stylex {
   #computedTransition: string = "";
   #lastAppliedValues: Map<StylexPropertyName, StylexValueSimple> = new Map();
 
-  #setComputedTransition(value: string) {
-    if (this.#computedTransition !== value) {
-      this.#computedTransition = value;
-      this.#recalculateTransitionCssPropertyValue();
-    }
-  }
-
-  #addRunningAnimation(
-    property: StylexPropertyName,
-    transition: CssTransition,
-    cleanupFunction: () => void,
-  ) {
-    if (!this.#runningAnimations.has(property)) {
-      this.#runningAnimations.set(property, [transition, cleanupFunction]);
-      this.#recalculateTransitionCssPropertyValue();
-    }
-  }
-
-  #removeRunningAnimation(property: StylexPropertyName) {
-    if (this.#runningAnimations.has(property)) {
-      this.#runningAnimations.delete(property);
-      this.#recalculateTransitionCssPropertyValue();
-    }
-  }
-
-  #recalculateTransitionCssPropertyValue() {
-    if (this.#computedTransition || this.#runningAnimations.size) {
-      const transitionList = [];
-      if (this.#computedTransition) {
-        transitionList.push(this.#computedTransition);
-      }
-      if (this.#runningAnimations.size) {
-        // @ts-ignore
-        const transitionMap = (
-          [...this.#runningAnimations.values()] as [CssTransition, () => void][]
-        ).reduce((acc, [transition]) => {
-          acc[transition[0]] = transition[1];
-          return acc;
-        }, {} as TransitionMap);
-        const style = validCssTransitionPropertyValue(transitionMap);
-        transitionList.push(style);
-      }
-      applyCssStyle(this.element, "transition", transitionList.join(", "));
-    } else {
-      removeCssStyle(this.element, "transition");
-    }
-  }
-
-  #addAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
-    if (!this.#appliedTransforms.has(transform)) {
-      this.#appliedTransforms.add(transform);
-      this.#recalculateTransformCssPropertyValue();
-    }
-  }
-
-  #removeAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
-    if (this.#appliedTransforms.has(transform)) {
-      this.#appliedTransforms.delete(transform);
-      this.#recalculateTransformCssPropertyValue();
-    }
-  }
-
-  #recalculateTransformCssPropertyValue() {
-    this.#element.style.transform = Array.from(this.#appliedTransforms)
-      .map(
-        (val) =>
-          `${lowercaseFirst(val.replace("transform", ""))}(var(${additionalPropertiesTransformMap[val]}))`,
-      )
-      .join(" ");
-  }
-
   constructor(
     element: HTMLElement,
     definition?: OrWithAnimation<StylexDefinition>,
@@ -506,6 +435,77 @@ export class Stylex {
     return proxy;
   }
 
+  #setComputedTransition(value: string) {
+    if (this.#computedTransition !== value) {
+      this.#computedTransition = value;
+      this.#recalculateTransitionCssPropertyValue();
+    }
+  }
+
+  #addRunningAnimation(
+    property: StylexPropertyName,
+    transition: CssTransition,
+    cleanupFunction: () => void,
+  ) {
+    if (!this.#runningAnimations.has(property)) {
+      this.#runningAnimations.set(property, [transition, cleanupFunction]);
+      this.#recalculateTransitionCssPropertyValue();
+    }
+  }
+
+  #removeRunningAnimation(property: StylexPropertyName) {
+    if (this.#runningAnimations.has(property)) {
+      this.#runningAnimations.delete(property);
+      this.#recalculateTransitionCssPropertyValue();
+    }
+  }
+
+  #recalculateTransitionCssPropertyValue() {
+    if (this.#computedTransition || this.#runningAnimations.size) {
+      const transitionList = [];
+      if (this.#computedTransition) {
+        transitionList.push(this.#computedTransition);
+      }
+      if (this.#runningAnimations.size) {
+        // @ts-ignore
+        const transitionMap = (
+          [...this.#runningAnimations.values()] as [CssTransition, () => void][]
+        ).reduce((acc, [transition]) => {
+          acc[transition[0]] = transition[1];
+          return acc;
+        }, {} as TransitionMap);
+        const style = validCssTransitionPropertyValue(transitionMap);
+        transitionList.push(style);
+      }
+      applyCssStyle(this.element, "transition", transitionList.join(", "));
+    } else {
+      removeCssStyle(this.element, "transition");
+    }
+  }
+
+  #addAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
+    if (!this.#appliedTransforms.has(transform)) {
+      this.#appliedTransforms.add(transform);
+      this.#recalculateTransformCssPropertyValue();
+    }
+  }
+
+  #removeAppliedTransform(transform: keyof AdditionalPropertiesTransform) {
+    if (this.#appliedTransforms.has(transform)) {
+      this.#appliedTransforms.delete(transform);
+      this.#recalculateTransformCssPropertyValue();
+    }
+  }
+
+  #recalculateTransformCssPropertyValue() {
+    this.#element.style.transform = Array.from(this.#appliedTransforms)
+      .map(
+        (val) =>
+          `${lowercaseFirst(val.replace("transform", ""))}(var(${additionalPropertiesTransformMap[val]}))`,
+      )
+      .join(" ");
+  }
+
   #removeProperty(name: StylexPropertyName) {
     // @ts-ignore
     const stylexValue = this[name];
@@ -561,11 +561,7 @@ export class Stylex {
     // @ts-ignore
     const currentPropertyValue = this[property]?.current;
     const valueToCompare = isAnimation(value) ? value.value : value;
-    if (
-      currentPropertyValue === valueToCompare ||
-      ((!currentPropertyValue || !valueToCompare) &&
-        !!currentPropertyValue === !!valueToCompare)
-    ) {
+    if (currentPropertyValue === valueToCompare) {
       return;
     }
 
@@ -936,7 +932,8 @@ export class Stylex {
     initial?: boolean,
   ) {
     const evaluatedValue = evalulateStylexValue(value, element);
-    if (evaluatedValue) {
+    console.log("evaluted value: ", evaluatedValue);
+    if (evaluatedValue !== null) {
       // @ts-ignore
       this.applyProperty(
         propertyName,
@@ -1107,7 +1104,7 @@ export class StylexValue {
     this.#propertyName = propertyName;
     this.#stateMap = new Map<StateSelectorwithDefault, StylexValueSimple>();
 
-    if (definition) {
+    if (definition !== undefined) {
       if (
         typeof definition === "string" ||
         typeof definition === "number" ||
@@ -1170,9 +1167,10 @@ export class StylexValue {
 
   get current() {
     // @ts-ignore
-    return this.#stylex.element.style.getPropertyValue(
+    const value = this.#stylex.element.style.getPropertyValue(
       stylexPropertyValueToKebabCase(this.#propertyName),
     );
+    return value ? null : value;
   }
 
   get length() {
@@ -1583,4 +1581,16 @@ function parseLengthOrPercentage(
   }
 
   return null;
+}
+
+export function mergeStylexDefinitions(
+  base: StylexDefinition,
+  spread?: StylexDefinition,
+): StylexDefinition {
+  if (!spread) {
+    return base;
+  }
+  const unwrapedBase = unwrapAnimations(base);
+  const unwrapedSpread = unwrapAnimations(spread);
+  return { ...unwrapedBase, ...unwrapedSpread };
 }
