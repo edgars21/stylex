@@ -11,7 +11,7 @@
     "ast:pre-solid": "node scripts/print-pre-solid-ast.js"
   },
   "dependencies": {
-    "@stylex/web": "^0.1.0",
+    "@stylex3/web": "^0.1.0",
     "solid-js": "^1.9.8"
   },
   "devDependencies": {

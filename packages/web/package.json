@@ -1,5 +1,5 @@
 {
-  "name": "@stylex2/web",
+  "name": "@stylex3/web",
   "version": "0.1.0",
   "license": "MIT",
   "author": "Edgars Snepsts",
@@ -11,7 +11,8 @@
     "cdn/**/*"
   ],
   "dependencies": {
-    "lodash-es": "^4.17.23"
+    "lodash-es": "^4.17.23",
+    "popmotion": "^11.0.5"
   },
   "devDependencies": {
     "esbuild": "^0.25.9",

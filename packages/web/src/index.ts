@@ -932,7 +932,6 @@ export class Stylex {
     initial?: boolean,
   ) {
     const evaluatedValue = evalulateStylexValue(value, element);
-    console.log("evaluted value: ", evaluatedValue);
     if (evaluatedValue !== null) {
       // @ts-ignore
       this.applyProperty(
