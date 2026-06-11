@@ -3,7 +3,7 @@ import {
   Stylex,
   animate,
   mergeStylexDefinitions,
-} from "@stylex/web";
+} from "@stylex3/web";
 import { createEffect, onCleanup } from "solid-js";
 
 export type { StylexDefinition };
