@@ -7,7 +7,7 @@ import {
 import { createEffect, onCleanup } from "solid-js";
 
 export type { StylexDefinition };
-export { animate, mergeStylexDefinitions };
+export { animate, mergeStylexDefinitions, Stylex };
 
 declare module "solid-js" {
   namespace JSX {
