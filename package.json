@@ -11,8 +11,8 @@
     "dist/**/*",
     "cdn/**/*"
   ],
-  "dependencies": {},
   "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
     "typescript": "^5.4.5"
   },
   "scripts": {
