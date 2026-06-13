@@ -29,7 +29,7 @@ import { animate as popmotionAnimate } from "popmotion";
 
 export type StylexDefinitionWithMtransition = {
   [K in StylexPropertyName]?: StylexValueDefinition;
-} & Mtransition;
+} & { mtransition?: Mtransition };
 
 export type Mtransition = {
   insert?: { [K in StylexPropertyName]?: Animation<StylexValueSimple> };
@@ -661,6 +661,7 @@ export class Stylex {
             }),
             ...(value.beforeStart && { beforeStart: value.beforeStart }),
             ...(value.afterEnd && { afterEnd: value.afterEnd }),
+            ...(value.from && { from: String(value.from) }),
           },
           this.#addListenerWithCleanup[0],
           this.#addRunningAnimation.bind(this),
@@ -1208,6 +1209,7 @@ type OrWithAnimation<T> = T | Animation<T>;
 export function animate(
   value: [string, OrWithAnimation<StylexValueSimple>],
   animation: Omit<Animation, "value">,
+  from?: unknown,
   // @ts-ignore
 ): Animation<StylexStateTuple>;
 
@@ -1215,16 +1217,22 @@ export function animate(
   // @ts-ignore
   value: StylexStateItem[],
   animation: Omit<Animation, "value">,
+  from?: unknown,
   // @ts-ignore
 ): Animation<StylexStateItem[]>;
 
 export function animate<T>(
   value: T,
   animation: Omit<Animation, "value">,
+  from?: unknown,
 ): Animation<T>;
 
-export function animate(value: unknown, animation: Omit<Animation, "value">) {
-  return { ...animation, value };
+export function animate(
+  value: unknown,
+  animation: Omit<Animation, "value">,
+  from?: unknown,
+): Animation {
+  return { ...animation, value, from };
 }
 
 type Animation<T = any> = {
@@ -1234,6 +1242,7 @@ type Animation<T = any> = {
   timingFunction?: string;
   beforeStart?: () => void;
   afterEnd?: () => void;
+  from?: T;
 };
 
 type AnimationSpec = AnimationSpecCss | AnimationSpecPoprunner;
@@ -1258,6 +1267,7 @@ type AnimationSpecCss = {
   timingFunction?: string;
   beforeStart?: () => void;
   afterEnd?: () => void;
+  from?: string;
 };
 
 function applyCssStyleWithAnimation(
@@ -1331,6 +1341,16 @@ function applyCssStyleWithAnimation(
       removeRunningAnimation(propertyName);
       animation.afterEnd?.();
     };
+
+    if (animation.from) {
+      if (
+        element.style.getPropertyValue(animation.cssPropertyName) !==
+        animation.from
+      ) {
+        applyCssStyle(element, animation.cssPropertyName, animation.from);
+        void element.offsetWidth;
+      }
+    }
 
     addRunningAnimation(
       propertyName,

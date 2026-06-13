@@ -3,11 +3,12 @@ import {
   Stylex,
   animate,
   mergeStylexDefinitions,
-  type Mtransition
+  type Mtransition,
+  type StylexDefinitionWithMtransition,
 } from "@stylex3/web";
 import { createEffect, onCleanup } from "solid-js";
 
-export type { StylexDefinition, Mtransition };
+export type { StylexDefinition, Mtransition, StylexDefinitionWithMtransition };
 export { animate, mergeStylexDefinitions, Stylex };
 
 declare module "solid-js" {
