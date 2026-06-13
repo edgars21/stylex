@@ -27,6 +27,15 @@ import { animate as popmotionAnimate } from "popmotion";
 //   | [string, StylexValueDefinition]
 // )[];
 
+export type StylexDefinitionWithMtransition = {
+  [K in StylexPropertyName]?: StylexValueDefinition;
+} & Mtransition;
+
+export type Mtransition = {
+  insert?: { [K in StylexPropertyName]?: Animation<StylexValueSimple> };
+  remove?: { [K in StylexPropertyName]?: Animation<StylexValueSimple> };
+};
+
 export type StylexDefinition = OrWithAnimation<{
   [K in StylexPropertyName]?: StylexValueDefinition;
 }>;
@@ -545,7 +554,7 @@ export class Stylex {
   ) {
     Object.entries(value).forEach(([key, val]) => {
       // @ts-ignore
-      this.applyProperty(key, value, settings);
+      this.applyProperty(key, val, settings);
     });
   }
 
@@ -1320,6 +1329,7 @@ function applyCssStyleWithAnimation(
     cleanUpFunction = () => {
       cleanUpTransitionEnd();
       removeRunningAnimation(propertyName);
+      animation.afterEnd?.();
     };
 
     addRunningAnimation(
