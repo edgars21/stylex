@@ -314,8 +314,10 @@ const observer = new ElementDestructionObserver((el) => {
 export class Stylex {
   static #instances = new Set<Stylex>();
   static #onInstanceAddedSubscribers = new Set<() => void>();
-  static #addInstance(instance: Stylex) {
-    observer.observe(instance.#element);
+  static #addInstance(instance: Stylex, settings?: { noObserveCleanup: boolean }) {
+    if (!settings?.noObserveCleanup) {
+      observer.observe(instance.#element);
+    }
     Stylex.#instances.add(instance);
     Stylex.#onInstanceAddedSubscribers.forEach((subscriber) => subscriber());
   }
@@ -356,6 +358,7 @@ export class Stylex {
   constructor(
     element: HTMLElement,
     definition?: OrWithAnimation<StylexDefinition>,
+    settings?: { noObserveCleanup: boolean },
   ) {
     this.#element = element;
 
@@ -439,7 +442,7 @@ export class Stylex {
     // @ts-ignore
     element.stylex = proxy;
 
-    Stylex.#addInstance(this);
+    Stylex.#addInstance(this, settings);
 
     return proxy;
   }
@@ -1614,7 +1617,7 @@ function parseLengthOrPercentage(
 
 export function mergeStylexDefinitions(
   base: StylexDefinition,
-  spread?: StylexDefinition,
+  spread?: StylexDefinition | null,
 ): StylexDefinition {
   if (!spread) {
     return base;

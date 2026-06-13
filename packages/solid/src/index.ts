@@ -20,9 +20,11 @@ declare module "solid-js" {
 }
 
 export function stylex(element: HTMLElement, callback: () => StylexDefinition) {
-  onCleanup(() => {});
   createEffect(() => {
     const value = callback();
-    new Stylex(element, value);
+    const instnance = new Stylex(element, value, { noObserveCleanup: true });
+    onCleanup(() => {
+      instnance.onDestroy();
+    });
   });
 }
