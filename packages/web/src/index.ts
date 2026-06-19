@@ -137,6 +137,12 @@ type ValueofSetter =
   | number
   | (string | number | [string, string | number])[];
 
+function entriesWithSymbols<T extends object>(obj: T): [keyof T, T[keyof T]][] {
+  return (Reflect.ownKeys(obj) as Array<keyof T>)
+    .filter((key) => Object.getOwnPropertyDescriptor(obj, key)?.enumerable)
+    .map((key) => [key, obj[key]] as [keyof T, T[keyof T]]);
+}
+
 function unwrapAnimations(
   value: OrWithAnimation<[string, OrWithAnimation<StylexValueSimple>]>,
   applyAnimation?: Omit<Animation, "value">,
@@ -156,7 +162,6 @@ function unwrapAnimations(
     | OrWithAnimation<StylexValueSimple>
     | (StylexValueSimple | [string, OrWithAnimation<StylexValueSimple>])[];
 };
-
 function unwrapAnimations(
   value:
     | StylexDefinition
@@ -181,7 +186,7 @@ function unwrapAnimations(
   } else {
     if (!Array.isArray(value)) {
       return (
-        Object.entries(value) as unknown as [
+        entriesWithSymbols(value) as unknown as [
           StylexPropertyName,
           StylexValueDefinition,
         ][]
@@ -314,7 +319,10 @@ const observer = new ElementDestructionObserver((el) => {
 export class Stylex {
   static #instances = new Set<Stylex>();
   static #onInstanceAddedSubscribers = new Set<() => void>();
-  static #addInstance(instance: Stylex, settings?: { noObserveCleanup: boolean }) {
+  static #addInstance(
+    instance: Stylex,
+    settings?: { noObserveCleanup: boolean },
+  ) {
     if (!settings?.noObserveCleanup) {
       observer.observe(instance.#element);
     }
@@ -945,7 +953,7 @@ export class Stylex {
     initial?: boolean,
   ) {
     const evaluatedValue = evalulateStylexValue(value, element);
-    if (evaluatedValue !== null) {
+    if (evaluatedValue !== undefined) {
       // @ts-ignore
       this.applyProperty(
         propertyName,
@@ -1182,7 +1190,7 @@ export class StylexValue {
     const value = this.#stylex.element.style.getPropertyValue(
       stylexPropertyValueToKebabCase(this.#propertyName),
     );
-    return value ? null : value;
+    return !value ? null : value;
   }
 
   get length() {
@@ -1408,11 +1416,21 @@ function isPropertyValueAnimation(
   value: StylexApplicableValue,
   // @ts-ignore
 ): value is Animation<string> {
-  return typeof value === "object" && "duration" in value && "value" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "duration" in value &&
+    "value" in value
+  );
 }
 
 function isAnimation(value: any): value is Animation {
-  return typeof value === "object" && "duration" in value && "value" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "duration" in value &&
+    "value" in value
+  );
 }
 
 type ValidCssTransitionPropertyName = string & {
@@ -1622,7 +1640,44 @@ export function mergeStylexDefinitions(
   if (!spread) {
     return base;
   }
+
   const unwrapedBase = unwrapAnimations(base);
   const unwrapedSpread = unwrapAnimations(spread);
-  return { ...unwrapedBase, ...unwrapedSpread };
+  const out = entriesWithSymbols(unwrapedSpread).reduce((acc, [key, value]) => {
+    if (typeof key === "symbol") {
+      // @ts-ignore
+      key = key.description as StylexPropertyName;
+      let current = acc[key];
+      if (
+        typeof current === "string" ||
+        typeof current === "number" ||
+        (isAnimation(current) &&
+          (typeof current.value === "string" ||
+            // @ts-ignore
+            typeof current.value === "number"))
+      ) {
+        // @ts-ignore
+        current = [current];
+      }
+
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        (isAnimation(value) &&
+          (typeof value.value === "string" ||
+            // @ts-ignore
+            typeof value.value === "number"))
+      ) {
+        // @ts-ignore
+        value = [current];
+      }
+
+      // @ts-ignore
+      value = [...value || [], ...current || []];
+    }
+    // @ts-ignore
+    acc[key] = value;
+    return acc;
+  }, unwrapedBase);
+  return out;
 }
