@@ -143,6 +143,12 @@ function entriesWithSymbols<T extends object>(obj: T): [keyof T, T[keyof T]][] {
     .map((key) => [key, obj[key]] as [keyof T, T[keyof T]]);
 }
 
+function keysWithSymbols<T extends object>(obj: T): (keyof T)[] {
+  return (Reflect.ownKeys(obj) as Array<keyof T>)
+    .filter((key) => Object.getOwnPropertyDescriptor(obj, key)?.enumerable)
+    .map((key) => key as keyof T);
+}
+
 function unwrapAnimations(
   value: OrWithAnimation<[string, OrWithAnimation<StylexValueSimple>]>,
   applyAnimation?: Omit<Animation, "value">,
@@ -1643,6 +1649,18 @@ export function mergeStylexDefinitions(
 
   const unwrapedBase = unwrapAnimations(base);
   const unwrapedSpread = unwrapAnimations(spread);
+
+  const baseKeys = keysWithSymbols(unwrapedBase);
+  const symoblKeys = baseKeys.filter((key) => typeof key === "symbol");
+  if (symoblKeys.length) {
+    symoblKeys.forEach((key) => {
+      const value = unwrapedBase[key];
+      delete unwrapedBase[key];
+      // @ts-ignore
+      unwrapedBase[key.description as StylexPropertyName] = value;
+    })
+  }
+
   const out = entriesWithSymbols(unwrapedSpread).reduce((acc, [key, value]) => {
     if (typeof key === "symbol") {
       // @ts-ignore
@@ -1673,7 +1691,7 @@ export function mergeStylexDefinitions(
       }
 
       // @ts-ignore
-      value = [...value || [], ...current || []];
+      value = [...(value || []), ...(current || [])];
     }
     // @ts-ignore
     acc[key] = value;
