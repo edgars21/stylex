@@ -16,9 +16,8 @@
     "typescript": "^5.4.5"
   },
   "scripts": {
-    "clean": "rm -rf dist",
-    "build:ts": "npm run clean && tsc",
-    "build": "npm run clean && tsc"
+    "clean": "npm run clean --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
   },
   "workspaces": [
     "packages/*",
